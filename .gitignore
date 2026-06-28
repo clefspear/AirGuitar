@@ -1,0 +1,56 @@
+build/
+cmake-build*/
+cmake-build-*/
+out/
+
+# Models downloaded at configure time
+models/*.tflite
+models/*.tflite.*
+!models/.gitkeep
+
+# Audio samples
+resources/guitar_samples/*
+!resources/guitar_samples/.gitkeep
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.opendb
+*.vcxproj.*
+*.sln
+
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.dylib
+*.so
+*.dll
+*.a
+*.lib
+*.dSYM/
+
+# Logs
+*.log
+*.db
+*.trace
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# Planning documentation (not part of source)
+*.md
+docs/
+plans/
