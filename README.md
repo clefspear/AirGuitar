@@ -2,7 +2,7 @@
 
 **Air guitar simulator — real-time hand tracking via TFLite, physics-driven audio, all in C++.**
 
-![build](https://img.shields.io/badge/build-passing-brightgreen) ![C++20](https://img.shields.io/badge/C++-20-blue) ![macOS](https://img.shields.io/badge/platform-macOS-lightgrey) ![License](https://img.shields.io/badge/license-MIT-green)
+![build](https://img.shields.io/badge/build-passing-brightgreen) ![C++20](https://img.shields.io/badge/C++-20-blue) ![macOS](https://img.shields.io/badge/platform-macOS-lightgrey) ![License](https://img.shields.io/badge/license-Apache%202.0-green)
 
 > Target: <15 ms round-trip latency from camera frame to audio output on Apple Silicon.
 
@@ -191,4 +191,4 @@ Model paths are set in `cmake/FetchModels.cmake` and downloaded to `models/*.tfl
 
 ## License
 
-MIT
+Apache 2.0
