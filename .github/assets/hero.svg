@@ -1,0 +1,129 @@
+<svg width="1200" height="380" viewBox="0 0 1200 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AirGuitar — real-time air-guitar synthesis, hand tracking to physics to sound, in C++">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#11151c"/>
+      <stop offset="1" stop-color="#0b0e13"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffb24a"/>
+      <stop offset="1" stop-color="#ff7a45"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffb24a" stop-opacity="1"/>
+      <stop offset="1" stop-color="#ffb24a" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <!-- panel -->
+  <rect x="0" y="0" width="1200" height="380" rx="18" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="1199" height="379" rx="17.5" fill="none" stroke="#222a35" stroke-width="1"/>
+
+  <!-- faint frets on the right -->
+  <g stroke="#2a3340" stroke-width="1">
+    <line x1="640" y1="64" x2="640" y2="316"/>
+    <line x1="740" y1="64" x2="740" y2="316"/>
+    <line x1="845" y1="64" x2="845" y2="316"/>
+    <line x1="955" y1="64" x2="955" y2="316"/>
+    <line x1="1070" y1="64" x2="1070" y2="316"/>
+  </g>
+
+  <!-- ===== left: wordmark ===== -->
+  <g font-family="ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace">
+    <rect x="64" y="92" width="34" height="6" rx="3" fill="url(#amber)"/>
+    <text x="64" y="150" font-size="58" font-weight="700" letter-spacing="2" fill="#eef1f5">AIR<tspan fill="#ffb24a">GUITAR</tspan></text>
+  </g>
+  <g font-family="-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" fill="#aeb6c2">
+    <text x="65" y="196" font-size="20" font-weight="500">Real-time air-guitar synthesis.</text>
+    <text x="65" y="224" font-size="20" font-weight="500">Hand tracking <tspan fill="#4ed7c9">→</tspan> physics <tspan fill="#ffb24a">→</tspan> sound, in C++.</text>
+  </g>
+  <!-- spec chips -->
+  <g font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="13" fill="#cdd3dc">
+    <g>
+      <rect x="65" y="262" width="138" height="30" rx="15" fill="#161c25" stroke="#2c3543"/>
+      <text x="82" y="282">&lt;15 ms latency</text>
+    </g>
+    <g>
+      <rect x="213" y="262" width="120" height="30" rx="15" fill="#161c25" stroke="#2c3543"/>
+      <text x="230" y="282">Apple Silicon</text>
+    </g>
+    <g>
+      <rect x="343" y="262" width="82" height="30" rx="15" fill="#161c25" stroke="#2c3543"/>
+      <text x="360" y="282">TFLite</text>
+    </g>
+    <g>
+      <rect x="435" y="262" width="74" height="30" rx="15" fill="#161c25" stroke="#2c3543"/>
+      <text x="452" y="282">JUCE</text>
+    </g>
+  </g>
+
+  <!-- ===== right: signal-flow motif ===== -->
+  <!-- six strings, thick (low E) to thin (high e) -->
+  <g stroke="#9aa1ad" stroke-linecap="round">
+    <line x1="600" y1="92"  x2="1150" y2="92"  stroke-width="3.4" opacity="0.85"/>
+    <line x1="600" y1="128" x2="1150" y2="128" stroke-width="2.8" opacity="0.85"/>
+    <line x1="600" y1="164" x2="1150" y2="164" stroke-width="2.2" opacity="0.85"/>
+    <!-- plucked string at y=210 drawn separately -->
+    <line x1="600" y1="246" x2="1150" y2="246" stroke-width="1.5" opacity="0.85"/>
+    <line x1="600" y1="282" x2="1150" y2="282" stroke-width="1.1" opacity="0.85"/>
+  </g>
+
+  <!-- plucked string (amber, vibrating) -->
+  <g filter="url(#glow)">
+    <path stroke="url(#amber)" stroke-width="2.6" fill="none" stroke-linecap="round"
+          d="M600,200 L780,200 Q820,200 838,176 Q856,200 900,200 L1150,200">
+      <animate attributeName="d" dur="0.6s" repeatCount="indefinite"
+        values="M600,200 L780,200 Q820,200 838,176 Q856,200 900,200 L1150,200;
+                M600,200 L780,200 Q820,200 838,224 Q856,200 900,200 L1150,200;
+                M600,200 L780,200 Q820,200 838,176 Q856,200 900,200 L1150,200"/>
+    </path>
+  </g>
+
+  <!-- output waveform trailing right of the pluck -->
+  <path d="M905,200 q11,-30 22,0 q11,30 22,0 q11,-24 22,0 q11,24 22,0 q11,-18 22,0 q11,18 22,0 q11,-12 22,0 q11,12 22,0 q11,-7 22,0 q11,7 22,0"
+        fill="none" stroke="url(#wave)" stroke-width="2"/>
+
+  <!-- strumming hand: simplified 21-point landmark skeleton (teal) -->
+  <g stroke="#4ed7c9" stroke-width="1.6" fill="#0b0e13">
+    <!-- bone connections -->
+    <g opacity="0.9">
+      <!-- thumb -->
+      <path d="M812,266 L796,250 L786,234 L780,220" fill="none"/>
+      <!-- index -->
+      <path d="M816,262 L818,236 L820,214 L821,198" fill="none"/>
+      <!-- middle -->
+      <path d="M824,262 L830,234 L834,210 L836,192" fill="none"/>
+      <!-- ring -->
+      <path d="M832,264 L842,238 L848,216 L851,200" fill="none"/>
+      <!-- pinky -->
+      <path d="M838,268 L850,248 L857,230 L861,216" fill="none"/>
+      <!-- palm arc -->
+      <path d="M812,266 L824,262 L832,264 L838,268" fill="none"/>
+      <path d="M812,266 L816,262" fill="none"/>
+    </g>
+    <!-- wrist -->
+    <circle cx="820" cy="284" r="4.5" fill="#4ed7c9" filter="url(#softglow)"/>
+    <circle cx="820" cy="284" r="3.2" fill="#0b0e13" stroke="#4ed7c9" stroke-width="1.6"/>
+    <!-- joints -->
+    <g fill="#4ed7c9">
+      <circle cx="812" cy="266" r="2.6"/><circle cx="796" cy="250" r="2.4"/><circle cx="786" cy="234" r="2.2"/><circle cx="780" cy="220" r="2.2"/>
+      <circle cx="816" cy="262" r="2.6"/><circle cx="818" cy="236" r="2.4"/><circle cx="820" cy="214" r="2.2"/><circle cx="821" cy="198" r="2.2"/>
+      <circle cx="824" cy="262" r="2.6"/><circle cx="830" cy="234" r="2.4"/><circle cx="834" cy="210" r="2.2"/><circle cx="836" cy="192" r="2.2"/>
+      <circle cx="832" cy="264" r="2.6"/><circle cx="842" cy="238" r="2.4"/><circle cx="848" cy="216" r="2.2"/><circle cx="851" cy="200" r="2.2"/>
+      <circle cx="838" cy="268" r="2.6"/><circle cx="850" cy="248" r="2.4"/><circle cx="857" cy="230" r="2.2"/><circle cx="861" cy="216" r="2.2"/>
+    </g>
+  </g>
+
+  <!-- flow labels under the motif -->
+  <g font-family="ui-monospace, 'SF Mono', Menlo, monospace" font-size="12" letter-spacing="1">
+    <text x="800" y="336" fill="#4ed7c9" text-anchor="middle">TRACK</text>
+    <text x="905" y="336" fill="#9aa1ad" text-anchor="middle">PLUCK</text>
+    <text x="1040" y="336" fill="#ffb24a" text-anchor="middle">SOUND</text>
+  </g>
+</svg>

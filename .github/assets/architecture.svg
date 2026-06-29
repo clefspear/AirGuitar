@@ -1,0 +1,106 @@
+<svg width="900" height="520" viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AirGuitar threading architecture: vision thread, audio thread, and main render thread decoupled via lock-free buffers">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#11151c"/><stop offset="1" stop-color="#0b0e13"/>
+    </linearGradient>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+    </marker>
+    <marker id="arrT" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4ed7c9"/>
+    </marker>
+    <marker id="arrA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ffb24a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="520" rx="16" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="899" height="519" rx="15.5" fill="none" stroke="#222a35"/>
+
+  <g font-family="ui-monospace, 'SF Mono', Menlo, monospace">
+    <!-- ===== VISION THREAD ===== -->
+    <rect x="36" y="40" width="372" height="280" rx="12" fill="#0e1620" stroke="#1f3a3a"/>
+    <text x="56" y="68" font-size="13" letter-spacing="2" fill="#4ed7c9">VISION THREAD</text>
+
+    <g fill="#151b24" stroke="#2c3543">
+      <rect x="64" y="86" width="150" height="52" rx="8"/>
+      <rect x="64" y="160" width="150" height="52" rx="8"/>
+    </g>
+    <g font-family="-apple-system,'Segoe UI',Roboto,sans-serif" fill="#e6e9ee">
+      <text x="80" y="108" font-size="14" font-weight="600">Camera</text>
+      <text x="80" y="126" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">OpenCV · 1280×720</text>
+      <text x="80" y="182" font-size="14" font-weight="600">HandPipeline</text>
+      <text x="80" y="200" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">orchestration</text>
+    </g>
+    <line x1="139" y1="138" x2="139" y2="158" stroke="#5b6675" marker-end="url(#arr)"/>
+
+    <!-- three models -->
+    <g fill="#151b24" stroke="#2c3543">
+      <rect x="248" y="86" width="138" height="44" rx="8"/>
+      <rect x="248" y="142" width="138" height="44" rx="8"/>
+      <rect x="248" y="198" width="138" height="44" rx="8"/>
+    </g>
+    <g font-family="-apple-system,'Segoe UI',Roboto,sans-serif" fill="#e6e9ee">
+      <text x="264" y="106" font-size="13" font-weight="600">Palm Detector</text>
+      <text x="264" y="122" font-size="10" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">every 3rd frame</text>
+      <text x="264" y="162" font-size="13" font-weight="600">Hand Landmarker</text>
+      <text x="264" y="178" font-size="10" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">21 pts · warp+infer</text>
+      <text x="264" y="218" font-size="13" font-weight="600">Pose Landmarker</text>
+      <text x="264" y="234" font-size="10" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">33 keypoints</text>
+    </g>
+    <path d="M214,186 C232,186 232,108 246,108" fill="none" stroke="#5b6675" marker-end="url(#arr)"/>
+    <path d="M214,186 L246,164" fill="none" stroke="#5b6675" marker-end="url(#arr)"/>
+    <path d="M214,186 C232,186 232,220 246,220" fill="none" stroke="#5b6675" marker-end="url(#arr)"/>
+
+    <text x="56" y="300" font-size="11" fill="#6c7686" font-family="ui-monospace,Menlo,monospace">TFLite 2.16 · async, never blocks audio</text>
+
+    <!-- ===== AUDIO THREAD ===== -->
+    <rect x="492" y="40" width="372" height="160" rx="12" fill="#1a1308" stroke="#3a2f1a"/>
+    <text x="512" y="68" font-size="13" letter-spacing="2" fill="#ffb24a">AUDIO THREAD</text>
+    <g fill="#151b24" stroke="#2c3543">
+      <rect x="520" y="86" width="158" height="86" rx="8"/>
+      <rect x="700" y="86" width="146" height="86" rx="8"/>
+    </g>
+    <g font-family="-apple-system,'Segoe UI',Roboto,sans-serif" fill="#e6e9ee">
+      <text x="536" y="112" font-size="14" font-weight="600">Physics</text>
+      <text x="536" y="132" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">240 Hz fixed</text>
+      <text x="536" y="150" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">strings · frets</text>
+      <text x="716" y="112" font-size="14" font-weight="600">Synth</text>
+      <text x="716" y="132" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">Karplus–Strong</text>
+      <text x="716" y="150" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">+ samples</text>
+    </g>
+    <line x1="678" y1="129" x2="698" y2="129" stroke="#ffb24a" marker-end="url(#arrA)"/>
+
+    <!-- ===== MAIN THREAD ===== -->
+    <rect x="492" y="224" width="372" height="160" rx="12" fill="#101620" stroke="#26303d"/>
+    <text x="512" y="252" font-size="13" letter-spacing="2" fill="#aeb6c2">MAIN THREAD · JUCE</text>
+    <g fill="#151b24" stroke="#2c3543">
+      <rect x="520" y="270" width="158" height="86" rx="8"/>
+      <rect x="700" y="270" width="146" height="86" rx="8"/>
+    </g>
+    <g font-family="-apple-system,'Segoe UI',Roboto,sans-serif" fill="#e6e9ee">
+      <text x="536" y="296" font-size="14" font-weight="600">MainComponent</text>
+      <text x="536" y="316" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">OpenGL canvas</text>
+      <text x="536" y="334" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">60 fps render</text>
+      <text x="716" y="296" font-size="14" font-weight="600">HUD</text>
+      <text x="716" y="316" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">overlay ·</text>
+      <text x="716" y="334" font-size="11" fill="#8b949e" font-family="ui-monospace,Menlo,monospace">landmarks</text>
+    </g>
+    <line x1="678" y1="313" x2="698" y2="313" stroke="#5b6675" marker-end="url(#arr)"/>
+  </g>
+
+  <!-- ===== cross-thread handoff: one atomic snapshot, two consumers ===== -->
+  <g font-family="ui-monospace,'SF Mono',Menlo,monospace">
+    <rect x="406" y="182" width="88" height="56" rx="12" fill="#101a18" stroke="#2f5a55"/>
+    <text x="450" y="206" font-size="11" fill="#4ed7c9" text-anchor="middle">atomic</text>
+    <text x="450" y="222" font-size="11" fill="#4ed7c9" text-anchor="middle">&lt;Results&gt;</text>
+  </g>
+  <!-- vision pipeline -> snapshot -->
+  <path d="M340,212 C372,212 376,210 404,210" fill="none" stroke="#4ed7c9" stroke-dasharray="4 4" marker-end="url(#arrT)"/>
+  <!-- snapshot -> audio physics (plucks / fret presses) -->
+  <path d="M494,200 C512,200 510,150 518,138" fill="none" stroke="#4ed7c9" stroke-dasharray="4 4" marker-end="url(#arrT)"/>
+  <!-- snapshot -> main render (draw overlay) -->
+  <path d="M494,222 C512,222 510,290 518,300" fill="none" stroke="#4ed7c9" stroke-dasharray="4 4" marker-end="url(#arrT)"/>
+
+  <text x="450" y="504" font-size="11" font-family="ui-monospace,Menlo,monospace" fill="#6c7686" text-anchor="middle">Three decoupled threads — a slow inference frame never stalls the 60 fps render or the audio callback.</text>
+</svg>
