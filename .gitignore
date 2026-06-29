@@ -52,5 +52,6 @@ venv/
 
 # Planning documentation (not part of source)
 *.md
+!README.md
 docs/
 plans/
