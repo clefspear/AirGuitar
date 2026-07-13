@@ -12,6 +12,13 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(AirGuitarTests
   VisionTests.cpp
   PhysicsTests.cpp
+  OneEuroFilterTests.cpp
+  FretboardTrackerTests.cpp
+  StrumDetectorTests.cpp
+  ChordClassifierTests.cpp
+  PhysicsEngineTests.cpp
+  CalibrationTests.cpp
+  AudioTests.cpp
 )
 
 target_link_libraries(AirGuitarTests PRIVATE

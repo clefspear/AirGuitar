@@ -1,6 +1,7 @@
 #include "Camera.h"
 #include <opencv2/imgproc.hpp>
 #include <chrono>
+#include <iostream>
 
 namespace AirGuitar {
 
@@ -84,18 +85,9 @@ Camera::Frame Camera::getLatestFrame()
         return {};
 
     return Frame{
-        .data = latestFrame.data,
-        .cols = latestFrame.cols,
-        .rows = latestFrame.rows,
-        .step = static_cast<int>(latestFrame.step),
+        .image = latestFrame.clone(),
         .timestampMs = latestTimestampMs
     };
-}
-
-cv::Mat Camera::getLatestFrameMat()
-{
-    std::lock_guard<std::mutex> lock(frameMutex);
-    return latestFrame.clone();
 }
 
 double Camera::getFrameRate() const
@@ -123,6 +115,7 @@ void Camera::captureLoop()
     using clock = std::chrono::steady_clock;
     auto lastTime = clock::now();
     int frameCount = 0;
+    bool loggedResolution = false;
 
     while (!shouldStop.load())
     {
@@ -135,6 +128,16 @@ void Camera::captureLoop()
 
         if (frame.empty())
             continue;
+
+        // Log actual capture resolution on first frame
+        if (!loggedResolution)
+        {
+            std::cout << "Camera: actual capture resolution = "
+                      << frame.cols << "x" << frame.rows
+                      << " (requested: " << width << "x" << height << ")"
+                      << " step=" << frame.step << std::endl;
+            loggedResolution = true;
+        }
 
         cv::Mat rgb;
         cv::cvtColor(frame, rgb, cv::COLOR_BGR2RGB);

@@ -36,6 +36,9 @@ HandLandmarks HandLandmarker::detect(const cv::Mat& frame,
     cv::Mat rotationMatrix;
     auto croppedWarped = preprocess(frame, palm, rotationMatrix);
 
+    if (croppedWarped.empty())
+        return result;
+
     auto* inputData = runtime->getInputFloatPtr(0);
     if (!inputData)
         return result;
@@ -107,8 +110,14 @@ cv::Mat HandLandmarker::preprocess(const cv::Mat& frame,
     int cropH = std::min(static_cast<int>(size),
                          rotated.rows - y);
 
+    if (cropW <= 0 || cropH <= 0)
+        return cv::Mat();
+
     cv::Rect cropRect(x, y, cropW, cropH);
     cv::Mat cropped = rotated(cropRect).clone();
+
+    if (cropped.empty())
+        return cv::Mat();
 
     cv::Mat resized;
     cv::resize(cropped, resized, cv::Size(kInputSize, kInputSize), 0, 0,
@@ -148,15 +157,15 @@ HandLandmarks HandLandmarker::decodeOutput(
         float imgY = lm.y * kInputSize / static_cast<float>(kInputSize)
                      * cropSize + cropCenterY;
 
-        cv::Mat pt(3, 1, CV_32F);
-        pt.at<float>(0) = imgX;
-        pt.at<float>(1) = imgY;
-        pt.at<float>(2) = 1.0f;
+        cv::Mat pt(3, 1, CV_64F);
+        pt.at<double>(0) = imgX;
+        pt.at<double>(1) = imgY;
+        pt.at<double>(2) = 1.0;
 
         cv::Mat origPt = invRot * pt;
 
-        lm.x = origPt.at<float>(0) / static_cast<float>(originalSize.width);
-        lm.y = origPt.at<float>(1) / static_cast<float>(originalSize.height);
+        lm.x = origPt.at<double>(0) / static_cast<float>(originalSize.width);
+        lm.y = origPt.at<double>(1) / static_cast<float>(originalSize.height);
         lm.z = lm.z / static_cast<float>(kInputSize) * cropSize
                / static_cast<float>(originalSize.width);
         lm.visibility = 1.0f;

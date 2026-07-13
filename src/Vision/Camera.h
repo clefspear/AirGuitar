@@ -45,15 +45,11 @@ public:
 
     struct Frame
     {
-        const unsigned char* data = nullptr;
-        int cols = 0;
-        int rows = 0;
-        int step = 0;
+        cv::Mat image;
         int64_t timestampMs = 0;
     };
 
     Frame getLatestFrame();
-    cv::Mat getLatestFrameMat();
     double getFrameRate() const;
     int getWidth() const;
     int getHeight() const;

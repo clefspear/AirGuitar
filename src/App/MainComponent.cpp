@@ -1,11 +1,35 @@
 #include "MainComponent.h"
 #include "Application.h"
+#include "CrashLogger.h"
+#include <opencv2/imgcodecs.hpp>
 
 namespace AirGuitar {
 
 MainComponent::MainComponent()
 {
     setSize(1280, 720);
+
+    auto appDir = juce::File::getSpecialLocation(
+        juce::File::currentExecutableFile).getParentDirectory()
+        .getFullPathName().toStdString();
+    CrashLogger::instance().init(appDir);
+    CrashLogger::instance().installSignalHandlers();
+    CrashLogger::instance().logInfo("Application starting");
+
+    calibration = CalibrationData::defaultConfig();
+    calibrationManager.load(calibration, "");
+
+    physicsEngine = std::make_unique<PhysicsEngine>();
+    physicsEngine->setCalibration(calibration);
+
+    audioEngine = std::make_unique<AudioEngine>();
+    physicsEngine->setNoteCallback([this](const NoteEvent& evt) {
+        if (audioEngine)
+            audioEngine->handleNoteEvent(evt);
+    });
+
+    physicsEngine->start();
+    CrashLogger::instance().logInfo("Physics engine started");
 
     camera = std::make_unique<Camera>();
 
@@ -15,37 +39,66 @@ MainComponent::MainComponent()
 
     if (result == Camera::Error::None)
     {
-        handPipeline = std::make_unique<HandPipeline>();
+        CrashLogger::instance().logInfo("Camera opened successfully");
 
-        auto modelsDir = juce::File::getSpecialLocation(
-            juce::File::currentExecutableFile).getParentDirectory()
-            .getChildFile("../../models");
+        auto modelsDir = findModelsDirectory();
+        CrashLogger::instance().logInfo("Models directory: " + modelsDir.getFullPathName().toStdString());
 
-        auto loadResult = handPipeline->initialise(
-            modelsDir.getFullPathName().toStdString());
-
-        if (loadResult == HandPipeline::Error::None)
+        if (!modelsDir.isDirectory())
         {
-            cameraReady = true;
-            handPipeline->start();
-
-            camera->setFrameCallback(
-                [this](const cv::Mat& frame, int64_t timestampMs)
-                {
-                    if (handPipeline && handPipeline->isRunning())
-                        handPipeline->onFrameReceived(frame, timestampMs);
-                });
-
-            camera->startCapture();
+            initError = InitError::ModelLoadFailed;
+            initErrorMessage = "Models directory not found at: " + modelsDir.getFullPathName().toStdString();
+            CrashLogger::instance().logError("Init", initErrorMessage);
         }
         else
         {
-            DBG("HandPipeline init failed: " << static_cast<int>(loadResult));
+            handPipeline = std::make_unique<HandPipeline>();
+            auto loadResult = handPipeline->initialise(
+                modelsDir.getFullPathName().toStdString());
+
+            if (loadResult == HandPipeline::Error::None)
+            {
+                cameraReady = true;
+                handPipeline->start();
+
+                camera->setFrameCallback(
+                    [this](const cv::Mat& frame, int64_t timestampMs)
+                    {
+                        if (handPipeline && handPipeline->isRunning())
+                            handPipeline->onFrameReceived(frame, timestampMs);
+                    });
+
+                camera->startCapture();
+                CrashLogger::instance().logInfo("Hand pipeline started, camera capture running");
+            }
+            else
+            {
+                initError = InitError::PipelineInitFailed;
+                initErrorMessage = "Hand pipeline init failed (error " +
+                    std::to_string(static_cast<int>(loadResult)) + ")";
+                CrashLogger::instance().logError("Init", initErrorMessage);
+            }
         }
     }
     else
     {
-        DBG("Camera open failed: " << static_cast<int>(result));
+        switch (result)
+        {
+            case Camera::Error::NotFound:
+                initError = InitError::CameraNotFound;
+                initErrorMessage = "No camera found. Please connect a webcam.";
+                break;
+            case Camera::Error::PermissionDenied:
+                initError = InitError::CameraPermissionDenied;
+                initErrorMessage = "Camera permission denied. Grant access in System Settings > Privacy & Security > Camera.";
+                break;
+            default:
+                initError = InitError::CameraOpenFailed;
+                initErrorMessage = "Camera failed to open (error " +
+                    std::to_string(static_cast<int>(result)) + ")";
+                break;
+        }
+        CrashLogger::instance().logError("Init", initErrorMessage);
     }
 
     startTimerHz(30);
@@ -54,6 +107,8 @@ MainComponent::MainComponent()
 MainComponent::~MainComponent()
 {
     stopTimer();
+    CrashLogger::instance().logInfo("Shutting down");
+    if (physicsEngine) physicsEngine->stop();
     if (handPipeline) handPipeline->stop();
     if (camera) camera->stopCapture();
 }
@@ -65,33 +120,55 @@ void MainComponent::paint(juce::Graphics& g)
     if (cameraReady && camera && handPipeline)
     {
         auto latestFrame = camera->getLatestFrame();
-        if (latestFrame.data != nullptr)
+        if (!latestFrame.image.empty())
         {
-            auto img = juce::Image(juce::Image::PixelFormat::RGB,
-                                   latestFrame.cols, latestFrame.rows, false);
+            const auto& frame = latestFrame.image;
+
+#ifdef AIRGUITAR_DEBUG_FRAME_DUMP
+            static std::atomic<bool> debugDumpEnabled{true};
+            static int debugFrameCount = 0;
+            if (debugDumpEnabled.load(std::memory_order_relaxed) && debugFrameCount < 5)
+            {
+                auto dumpPath = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+                    .getParentDirectory().getChildFile("debug_frame_" + juce::String(debugFrameCount) + ".png");
+                cv::imwrite(dumpPath.getFullPathName().toStdString(), frame);
+                std::cout << "Debug: saved frame " << debugFrameCount << " to " << dumpPath.getFullPathName().toStdString() << std::endl;
+                ++debugFrameCount;
+            }
+#endif
+
+            auto img = juce::Image(juce::Image::PixelFormat::ARGB,
+                                   frame.cols, frame.rows, false);
 
             juce::Image::BitmapData bitmapData(img,
                 juce::Image::BitmapData::writeOnly);
 
-            for (int y = 0; y < latestFrame.rows; ++y)
+            for (int y = 0; y < frame.rows; ++y)
             {
-                auto srcRow = latestFrame.data + y * latestFrame.step;
-                auto dstRow = bitmapData.getLinePointer(y);
-                std::copy(srcRow, srcRow + latestFrame.cols * 3, dstRow);
+                const auto* src = frame.ptr<unsigned char>(y);
+                auto* dst = reinterpret_cast<juce::PixelARGB*>(
+                    bitmapData.getLinePointer(y));
+                for (int x = 0; x < frame.cols; ++x)
+                {
+                    dst[x].setARGB(255,
+                                   src[x * 3 + 0],
+                                   src[x * 3 + 1],
+                                   src[x * 3 + 2]);
+                }
             }
 
             auto bounds = getLocalBounds().toFloat();
-            auto scaleX = bounds.getWidth() / static_cast<float>(latestFrame.cols);
-            auto scaleY = bounds.getHeight() / static_cast<float>(latestFrame.rows);
+            auto scaleX = bounds.getWidth() / static_cast<float>(frame.cols);
+            auto scaleY = bounds.getHeight() / static_cast<float>(frame.rows);
             auto scale = std::min(scaleX, scaleY);
 
-            auto w = latestFrame.cols * scale;
-            auto h = latestFrame.rows * scale;
+            auto w = frame.cols * scale;
+            auto h = frame.rows * scale;
             auto x = (bounds.getWidth() - w) / 2.0f;
             auto yPos = (bounds.getHeight() - h) / 2.0f;
 
             g.drawImage(img, x, yPos, w, h, 0, 0,
-                        latestFrame.cols, latestFrame.rows);
+                        frame.cols, frame.rows);
 
             auto landmarks = handPipeline->getLatestLandmarks();
             for (const auto& hand : landmarks.hands)
@@ -102,8 +179,22 @@ void MainComponent::paint(juce::Graphics& g)
                 drawLandmarks(g, hand, colour);
             }
             drawPose(g, landmarks.pose);
+
+            if (physicsEngine)
+            {
+                physicsEngine->pushFrame(landmarks);
+            }
         }
     }
+
+    if (physicsEngine && cameraReady)
+    {
+        drawStrumZone(g);
+        drawChordOverlay(g, physicsEngine->getLatestState());
+    }
+
+    if (initError != InitError::None)
+        drawErrorOverlay(g);
 
     drawDebugOverlay(g);
 }
@@ -127,10 +218,36 @@ void MainComponent::handleMessage(const juce::Message&)
 {
 }
 
+juce::File MainComponent::findModelsDirectory()
+{
+    auto exeDir = juce::File::getSpecialLocation(
+        juce::File::currentExecutableFile).getParentDirectory();
+
+    // Strategy 1: Inside .app bundle, check Resources/ (bundled models)
+    auto bundleResources = exeDir.getChildFile("../../Resources/models");
+    if (bundleResources.isDirectory())
+        return bundleResources;
+
+    // Strategy 2: Walk up to find project root models/
+    auto searchDir = exeDir;
+    for (int i = 0; i < 8; ++i)
+    {
+        auto candidate = searchDir.getChildFile("models");
+        if (candidate.isDirectory())
+            return candidate;
+        searchDir = searchDir.getParentDirectory();
+        if (!searchDir.isDirectory())
+            break;
+    }
+
+    // Strategy 3: Fallback to source tree relative path
+    return exeDir.getChildFile("../../../../../../models");
+}
+
 void MainComponent::drawDebugOverlay(juce::Graphics& g)
 {
     g.setColour(juce::Colours::white.withAlpha(0.85f));
-    g.setFont(juce::Font(14.0f));
+    g.setFont(juce::Font(juce::FontOptions(14.0f)));
 
     auto x = 10;
     auto y = 10;
@@ -163,11 +280,40 @@ void MainComponent::drawDebugOverlay(juce::Graphics& g)
                        x, y, 200, lineH, juce::Justification::left);
         }
     }
-    else
+}
+
+void MainComponent::drawErrorOverlay(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+
+    g.setColour(juce::Colours::black.withAlpha(0.7f));
+    g.fillRect(bounds);
+
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(juce::FontOptions(24.0f)));
+
+    std::string title;
+    switch (initError)
     {
-        g.drawText("Camera not available", x, y, 200, lineH,
-                   juce::Justification::left);
+        case InitError::CameraNotFound:     title = "No Camera Found"; break;
+        case InitError::CameraPermissionDenied: title = "Camera Permission Required"; break;
+        case InitError::CameraOpenFailed:   title = "Camera Error"; break;
+        case InitError::ModelLoadFailed:    title = "Models Not Found"; break;
+        case InitError::PipelineInitFailed: title = "Pipeline Init Failed"; break;
+        default: break;
     }
+
+    auto textBounds = bounds.reduced(40);
+    g.drawText(title, textBounds.removeFromTop(40), juce::Justification::centred);
+
+    g.setFont(juce::Font(juce::FontOptions(16.0f)));
+    g.setColour(juce::Colours::white.withAlpha(0.8f));
+    g.drawText(initErrorMessage, textBounds, juce::Justification::centred);
+
+    g.setFont(juce::Font(juce::FontOptions(12.0f)));
+    g.setColour(juce::Colours::yellow.withAlpha(0.6f));
+    g.drawText("Crash log: " + CrashLogger::instance().getLogPath(),
+               textBounds, juce::Justification::centredBottom);
 }
 
 void MainComponent::drawLandmarks(juce::Graphics& g,
@@ -236,6 +382,51 @@ void MainComponent::drawPose(juce::Graphics& g, const PoseLandmarks& pose)
         g.drawLine(p1.x * bounds.getWidth(), p1.y * bounds.getHeight(),
                    p2.x * bounds.getWidth(), p2.y * bounds.getHeight(),
                    2.0f);
+    }
+}
+
+void MainComponent::drawChordOverlay(juce::Graphics& g, const PhysicsState& state)
+{
+    if (!state.tracking)
+        return;
+
+    auto bounds = getLocalBounds().toFloat();
+
+    g.setColour(juce::Colours::white.withAlpha(0.9f));
+    g.setFont(juce::Font(juce::FontOptions(32.0f)));
+    g.drawText(state.chordName, bounds.removeFromBottom(50),
+               juce::Justification::centred);
+
+    g.setFont(juce::Font(juce::FontOptions(16.0f)));
+    g.drawText("Fret: " + juce::String(state.fretState.fret),
+               bounds.removeFromBottom(30),
+               juce::Justification::centred);
+}
+
+void MainComponent::drawStrumZone(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+
+    float left = bounds.getWidth() * calibration.strumZoneLeft;
+    float right = bounds.getWidth() * calibration.strumZoneRight;
+    float top = bounds.getHeight() * calibration.strumZoneTop;
+    float bottom = bounds.getHeight() * calibration.strumZoneBottom;
+
+    g.setColour(juce::Colours::yellow.withAlpha(0.15f));
+    g.fillRect(left, top, right - left, bottom - top);
+
+    g.setColour(juce::Colours::yellow.withAlpha(0.4f));
+    g.drawRect(left, top, right - left, bottom - top, 1.0f);
+
+    g.setColour(juce::Colours::yellow.withAlpha(0.3f));
+    g.setFont(juce::Font(juce::FontOptions(12.0f)));
+
+    for (int i = 0; i < 6; ++i)
+    {
+        float y = top + static_cast<float>(i) / 5.0f * (bottom - top);
+        g.drawLine(left, y, right, y, 0.5f);
+        g.drawText("S" + juce::String(i + 1), right + 5, y - 6, 25, 12,
+                   juce::Justification::left);
     }
 }
 

@@ -42,6 +42,7 @@ resources/guitar_samples/*
 *.log
 *.db
 *.trace
+crash_*.log
 
 # Python
 __pycache__/

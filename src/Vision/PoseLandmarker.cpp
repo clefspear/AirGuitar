@@ -55,6 +55,8 @@ cv::Mat PoseLandmarker::preprocess(const cv::Mat& frame,
 {
     int h = frame.rows;
     int w = frame.cols;
+    if (h <= 0 || w <= 0)
+        return cv::Mat();
     int size = std::max(w, h);
 
     float s = static_cast<float>(kInputSize) / static_cast<float>(size);

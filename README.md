@@ -82,11 +82,15 @@ ctest --preset debug
 
 | Subsystem | State |
 | --- | --- |
-| Hand + pose tracking (TFLite) | ✅ Working — 27 vision test cases |
+| Hand + pose tracking (TFLite) | ✅ Working |
 | Threaded capture / inference / audio | ✅ Working |
-| Karplus–Strong string synthesis | 🚧 In progress |
-| 240 Hz physics (strings, fret detection) | 🚧 In progress |
-| Sample-playback layer | 🚧 In progress |
+| Karplus–Strong string synthesis | ✅ Working |
+| 240 Hz physics (strings, fret detection, chord classification) | ✅ Working |
+| MIDI output | ✅ Working |
+| Calibration wizard (full + quick) | ✅ Working |
+| Crash logging | ✅ Working |
+| One Euro filter (jitter smoothing) | ✅ Working |
+| 88 tests, 280 assertions | ✅ All passing |
 
 ---
 
@@ -111,14 +115,17 @@ AirGuitar/
 ├─ cmake/                    # FetchJUCE, FetchTFLite, FetchModels, warnings
 ├─ src/
 │  ├─ main.cpp
-│  ├─ App/                   # JUCE shell — Application, MainComponent
-│  └─ Vision/                # Camera, TFLiteRuntime, Palm/Hand/Pose,
-│                            #   HandPipeline, LandmarkData
-├─ tests/                    # VisionTests (27 cases), PhysicsTests (stubs)
+│  ├─ App/                   # JUCE shell — Application, MainComponent, CrashLogger
+│  ├─ Vision/                # Camera, TFLiteRuntime, Palm/Hand/Pose,
+│  │                         #   HandPipeline, LandmarkData
+│  ├─ Physics/               # OneEuroFilter, FretboardTracker, StrumDetector,
+│  │                         #   ChordClassifier, PhysicsEngine
+│  ├─ Audio/                 # KarplusStrong, StringModel, AudioEngine, MidiOutput
+│  └─ Calibration/           # CalibrationManager, CalibrationData
+├─ tests/                    # 88 test cases across 9 test files
 ├─ scripts/                  # setup.sh, download_models.sh
 ├─ models/                   # .tflite files (downloaded)
-├─ resources/                # guitar samples (user-provided)
-└─ python/                   # train_chord_classifier.py
+└─ resources/                # guitar samples (user-provided)
 ```
 
 ---

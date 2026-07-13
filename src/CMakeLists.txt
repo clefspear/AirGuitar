@@ -7,11 +7,22 @@ set(LIB_SOURCES
   Vision/HandLandmarker.cpp
   Vision/PoseLandmarker.cpp
   Vision/HandPipeline.cpp
+  Physics/OneEuroFilter.cpp
+  Physics/FretboardTracker.cpp
+  Physics/StrumDetector.cpp
+  Physics/ChordClassifier.cpp
+  Physics/PhysicsEngine.cpp
+  Calibration/CalibrationManager.cpp
+  Audio/KarplusStrong.cpp
+  Audio/StringModel.cpp
+  Audio/AudioEngine.cpp
+  Audio/MidiOutput.cpp
 )
 
 set(LIB_HEADERS
   App/Application.h
   App/MainComponent.h
+  App/CrashLogger.h
   Vision/LandmarkData.h
   Vision/Camera.h
   Vision/TFLiteRuntime.h
@@ -19,6 +30,19 @@ set(LIB_HEADERS
   Vision/HandLandmarker.h
   Vision/PoseLandmarker.h
   Vision/HandPipeline.h
+  Physics/OneEuroFilter.h
+  Physics/NoteEvent.h
+  Physics/CalibrationData.h
+  Physics/PhysicsData.h
+  Physics/FretboardTracker.h
+  Physics/StrumDetector.h
+  Physics/ChordClassifier.h
+  Physics/PhysicsEngine.h
+  Calibration/CalibrationManager.h
+  Audio/KarplusStrong.h
+  Audio/StringModel.h
+  Audio/AudioEngine.h
+  Audio/MidiOutput.h
 )
 
 add_library(AirGuitarLib STATIC
@@ -37,6 +61,7 @@ target_link_libraries(AirGuitarLib PUBLIC
   juce::juce_audio_basics
   juce::juce_audio_devices
   juce::juce_audio_processors
+  juce::juce_audio_utils
   juce::juce_gui_basics
   juce::juce_graphics
   juce::juce_opengl
@@ -49,6 +74,7 @@ target_compile_definitions(AirGuitarLib PUBLIC
   JUCE_MODAL_LOOPS_PERMITTED=1
   JUCE_USE_CURL=0
   $<$<CONFIG:Debug>:JUCE_DEBUG=1>
+  $<$<CONFIG:Debug>:AIRGUITAR_DEBUG_FRAME_DUMP=1>
 )
 
 add_executable(AirGuitar
@@ -71,4 +97,21 @@ if(APPLE)
     XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "-"
     XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "YES"
   )
+
+  set(MODELS_DIR "${CMAKE_SOURCE_DIR}/models")
+  file(GLOB MODEL_FILES "${MODELS_DIR}/*.tflite")
+
+  if(MODEL_FILES)
+    foreach(MODEL_FILE ${MODEL_FILES})
+      get_filename_component(MODEL_NAME ${MODEL_FILE} NAME)
+      set_source_files_properties(${MODEL_FILE} PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources"
+      )
+      target_sources(AirGuitar PRIVATE ${MODEL_FILE})
+    endforeach()
+
+    set_target_properties(AirGuitar PROPERTIES
+      RESOURCE "${MODEL_FILES}"
+    )
+  endif()
 endif()
