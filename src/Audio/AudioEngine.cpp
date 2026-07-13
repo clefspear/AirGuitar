@@ -4,17 +4,24 @@ namespace AirGuitar {
 
 AudioEngine::AudioEngine()
 {
-    deviceManager.addAudioCallback(this);
-    juce::String error = deviceManager.initialiseWithDefaultDevices(0, 2);
-    if (error.isNotEmpty())
-    {
-        deviceManager.removeAudioCallback(this);
-    }
 }
 
 AudioEngine::~AudioEngine()
 {
-    deviceManager.removeAudioCallback(this);
+    if (audioStarted)
+        deviceManager.removeAudioCallback(this);
+}
+
+void AudioEngine::startAudio()
+{
+    if (audioStarted)
+        return;
+    deviceManager.addAudioCallback(this);
+    auto error = deviceManager.initialiseWithDefaultDevices(0, 2);
+    if (error.isNotEmpty())
+        deviceManager.removeAudioCallback(this);
+    else
+        audioStarted = true;
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)

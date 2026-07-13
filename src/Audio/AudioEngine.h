@@ -14,6 +14,8 @@ public:
     AudioEngine();
     ~AudioEngine() override;
 
+    void startAudio();
+
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
@@ -34,6 +36,7 @@ private:
     std::queue<NoteEvent> eventQueue;
     std::mutex queueMutex;
     bool prepared = false;
+    bool audioStarted = false;
     float masterVolume = 0.7f;
 };
 

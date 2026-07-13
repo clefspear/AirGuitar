@@ -130,6 +130,12 @@ MainComponent::MainComponent()
         CrashLogger::instance().logError("Init", initErrorMessage);
     }
 
+    if (audioEngine)
+    {
+        audioEngine->startAudio();
+        CrashLogger::instance().logInfo("Audio engine started");
+    }
+
     startTimerHz(30);
     setWantsKeyboardFocus(true);
     grabKeyboardFocus();
