@@ -9,12 +9,15 @@
 #include <mutex>
 #include <memory>
 #include <chrono>
+#include <functional>
 
 namespace AirGuitar {
 
 class HandPipeline
 {
 public:
+    using FrameCallback = std::function<void(const FrameData&)>;
+
     enum class Error
     {
         None,
@@ -43,6 +46,7 @@ public:
     FrameData getLatestLandmarks();
     double getInferenceRate() const;
 
+    void setFrameCallback(FrameCallback cb);
     void onFrameReceived(const cv::Mat& frame, int64_t timestampMs);
 
 private:
@@ -73,6 +77,8 @@ private:
         int64_t timestampMs;
     };
     std::vector<QueuedFrame> frameQueue;
+    std::vector<DetectedPalm> previousPalms;
+    FrameCallback frameCallback;
 
     void inferenceLoop();
     void processFrame(const cv::Mat& frame, int64_t timestampMs);

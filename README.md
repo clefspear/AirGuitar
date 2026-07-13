@@ -122,9 +122,11 @@ ctest --preset debug
 | Hand + pose tracking (TFLite) | ✅ Working |
 | Threaded capture / inference / audio | ✅ Working |
 | Karplus–Strong string synthesis | ✅ Working |
+| Body resonance (comb filter) | ✅ Working |
 | 240 Hz physics (strings, fret detection, chord classification) | ✅ Working |
 | MIDI output | ✅ Working |
-| Calibration wizard (full + quick) | ✅ Working |
+| Calibration wizard (auto-advance, note display) | ✅ Working |
+| Interactive UI (mouse play, fun mode, help overlay, note display) | ✅ Working |
 | Crash logging | ✅ Working |
 | One Euro filter (jitter smoothing) | ✅ Working |
 | 88 tests, 280 assertions | ✅ All passing |
@@ -159,8 +161,10 @@ AirGuitar/
 │  │                         #   HandPipeline, LandmarkData
 │  ├─ Physics/               # OneEuroFilter, FretboardTracker, StrumDetector,
 │  │                         #   ChordClassifier, PhysicsEngine
-│  ├─ Audio/                 # KarplusStrong, StringModel, AudioEngine, MidiOutput
-│  └─ Calibration/           # CalibrationManager, CalibrationData
+│  ├─ Audio/                 # KarplusStrong, StringModel, AudioEngine, MidiOutput,
+│  │                         #   BodyResonance
+│  ├─ Calibration/           # CalibrationManager, CalibrationData
+│  └─ UI/                    # CalibrationWizard
 ├─ tests/                    # 88 test cases across 9 test files
 ├─ scripts/                  # setup.sh, download_models.sh
 ├─ models/                   # .tflite files (downloaded)

@@ -81,6 +81,11 @@ double HandPipeline::getInferenceRate() const
     return measuredInferenceRate;
 }
 
+void HandPipeline::setFrameCallback(FrameCallback cb)
+{
+    frameCallback = std::move(cb);
+}
+
 void HandPipeline::onFrameReceived(const cv::Mat& frame, int64_t timestampMs)
 {
     if (!running.load() || frame.empty())
@@ -148,6 +153,11 @@ void HandPipeline::processFrame(const cv::Mat& frame, int64_t timestampMs)
         {
             palms = palmDetector->detect(frame);
             frameSkipCounter = 0;
+            previousPalms = palms;
+        }
+        else
+        {
+            palms = previousPalms;
         }
 
         for (const auto& palm : palms)
@@ -162,6 +172,9 @@ void HandPipeline::processFrame(const cv::Mat& frame, int64_t timestampMs)
         std::lock_guard<std::mutex> lock(resultMutex);
         latestResult = frameData;
     }
+
+    if (frameCallback)
+        frameCallback(frameData);
 }
 
 } // namespace AirGuitar

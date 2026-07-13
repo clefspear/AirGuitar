@@ -39,6 +39,8 @@ private:
     StrumDirection lastDirection = StrumDirection::None;
 
     std::array<int64_t, 6> lastStrumTimeMs = {-1, -1, -1, -1, -1, -1};
+    std::array<int, 6> previousActiveStrings = {-1, -1, -1, -1, -1, -1};
+    std::array<int, 6> previousFretForString = {0, 0, 0, 0, 0, 0};
 
     static float computeStringY(int stringIndex, const CalibrationData& cal);
     static bool crossedString(float prevY, float currY, float stringY, StrumDirection& dir);

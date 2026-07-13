@@ -7,7 +7,10 @@
 #include "Vision/Camera.h"
 #include "Physics/PhysicsEngine.h"
 #include "Audio/AudioEngine.h"
+#include "Audio/MidiOutput.h"
 #include "Calibration/CalibrationManager.h"
+#include "UI/CalibrationWizard.h"
+#include <atomic>
 
 namespace AirGuitar {
 
@@ -33,12 +36,19 @@ public:
     void resized() override;
     void timerCallback() override;
     void handleMessage(const juce::Message&) override;
+    bool keyPressed(const juce::KeyPress& key) override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
 
 private:
     std::unique_ptr<Camera> camera;
     std::unique_ptr<HandPipeline> handPipeline;
     std::unique_ptr<PhysicsEngine> physicsEngine;
     std::unique_ptr<AudioEngine> audioEngine;
+    std::unique_ptr<AirGuitarMidiOutput> midiOutput;
+    std::unique_ptr<CalibrationWizard> calWizard;
     CalibrationManager calibrationManager;
 
     bool cameraReady = false;
@@ -49,6 +59,15 @@ private:
     CalibrationData calibration;
     InitError initError = InitError::None;
     std::string initErrorMessage;
+    std::atomic<bool> midiConnected{false};
+    bool funMode = false;
+    bool showHelp = false;
+    bool mouseInStrumZone = false;
+    int mouseNoteString = -1;
+
+    PhysicsState lastState;
+    float noteOpacity = 0.0f;
+    float glowPhase = 0.0f;
 
     void drawDebugOverlay(juce::Graphics&);
     void drawErrorOverlay(juce::Graphics&);
@@ -56,6 +75,9 @@ private:
     void drawPose(juce::Graphics&, const PoseLandmarks&);
     void drawChordOverlay(juce::Graphics&, const PhysicsState&);
     void drawStrumZone(juce::Graphics&);
+    void drawNoteDisplay(juce::Graphics&, const PhysicsState&);
+    void drawHelpOverlay(juce::Graphics&);
+    void drawFunModeIndicator(juce::Graphics&);
 
     static juce::File findModelsDirectory();
 

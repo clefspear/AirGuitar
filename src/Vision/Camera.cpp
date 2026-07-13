@@ -33,7 +33,7 @@ Camera::Error Camera::open(int deviceId, int w, int h, int fps)
 
     measuredFps = capture.get(cv::CAP_PROP_FPS);
 
-    capture.set(cv::CAP_PROP_BUFFERSIZE, 2);
+    capture.set(cv::CAP_PROP_BUFFERSIZE, 1);
 
     return Error::None;
 }

@@ -82,6 +82,7 @@ std::vector<NoteEvent> StrumDetector::update(const HandLandmarks& hand,
                             lastStrumTimeMs[s] = timestampMs;
                             lastVelocity = velocity;
                             lastDirection = dir;
+                            previousFretForString[s] = currentFret;
                         }
                     }
                 }
@@ -92,6 +93,32 @@ std::vector<NoteEvent> StrumDetector::update(const HandLandmarks& hand,
     prevX = filteredX;
     prevY = filteredY;
     prevTimestampMs = timestampMs;
+
+    if (prevInZone && !inZone)
+    {
+        for (int s = 0; s < 6; ++s)
+        {
+            if (previousActiveStrings[s] >= 0)
+            {
+                NoteEvent noteOff;
+                noteOff.type = NoteEventType::NoteOff;
+                noteOff.midiNote = previousActiveStrings[s];
+                noteOff.stringIndex = s;
+                noteOff.fret = previousFretForString[s];
+                noteOff.velocity = 0.0f;
+                noteOff.direction = lastDirection;
+                noteOff.timestampMs = timestampMs;
+                events.push_back(noteOff);
+                previousActiveStrings[s] = -1;
+            }
+        }
+    }
+
+    for (auto& evt : events)
+    {
+        if (evt.type == NoteEventType::NoteOn)
+            previousActiveStrings[evt.stringIndex] = evt.midiNote;
+    }
 
     return events;
 }
@@ -106,6 +133,8 @@ void StrumDetector::reset()
     lastVelocity = 0.0f;
     lastDirection = StrumDirection::None;
     lastStrumTimeMs = {-1, -1, -1, -1, -1, -1};
+    previousActiveStrings = {-1, -1, -1, -1, -1, -1};
+    previousFretForString = {0, 0, 0, 0, 0, 0};
     xFilter.reset(0.0f);
     yFilter.reset(0.0f);
 }

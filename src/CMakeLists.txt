@@ -14,9 +14,11 @@ set(LIB_SOURCES
   Physics/PhysicsEngine.cpp
   Calibration/CalibrationManager.cpp
   Audio/KarplusStrong.cpp
+  Audio/BodyResonance.cpp
   Audio/StringModel.cpp
   Audio/AudioEngine.cpp
   Audio/MidiOutput.cpp
+  UI/CalibrationWizard.cpp
 )
 
 set(LIB_HEADERS
@@ -40,9 +42,11 @@ set(LIB_HEADERS
   Physics/PhysicsEngine.h
   Calibration/CalibrationManager.h
   Audio/KarplusStrong.h
+  Audio/BodyResonance.h
   Audio/StringModel.h
   Audio/AudioEngine.h
   Audio/MidiOutput.h
+  UI/CalibrationWizard.h
 )
 
 add_library(AirGuitarLib STATIC

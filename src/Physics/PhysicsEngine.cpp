@@ -92,6 +92,35 @@ void PhysicsEngine::processFrame(const FrameData& frame)
     if (!frame.hasHands())
     {
         newState.tracking = false;
+
+        std::vector<NoteEvent> offEvents;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex);
+            auto calCopy = calibration;
+            for (int s = 0; s < 6; ++s)
+            {
+                int fret = currentState.fretState.activeStrings[s];
+                if (fret >= 0)
+                {
+                    NoteEvent noteOff;
+                    noteOff.type = NoteEventType::NoteOff;
+                    noteOff.midiNote = calCopy.midiNoteForString(s, fret);
+                    noteOff.stringIndex = s;
+                    noteOff.fret = fret;
+                    noteOff.velocity = 0.0f;
+                    noteOff.timestampMs = frame.timestampMs;
+                    offEvents.push_back(noteOff);
+                }
+            }
+        }
+
+        for (auto& evt : offEvents)
+        {
+            if (noteCallback)
+                noteCallback(evt);
+        }
+
+        strumDetector.reset();
         std::lock_guard<std::mutex> lock(stateMutex);
         currentState = newState;
         return;

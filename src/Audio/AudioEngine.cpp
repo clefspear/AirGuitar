@@ -28,8 +28,7 @@ void AudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferTo
         {
             auto& evt = eventQueue.front();
             if (evt.type == NoteEventType::NoteOn)
-                stringModel.noteOn(evt.stringIndex, evt.fret, evt.velocity,
-                                   CalibrationData::defaultConfig());
+                stringModel.noteOn(evt.stringIndex, evt.midiNote, evt.velocity);
             else if (evt.type == NoteEventType::NoteOff)
                 stringModel.noteOff(evt.stringIndex);
             eventQueue.pop();

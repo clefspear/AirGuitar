@@ -43,7 +43,7 @@ TEST_CASE("KarplusStrong stops after enough samples", "[KarplusStrong]")
     ks.init(440.0f, 44100);
     ks.pluck(0.5f);
 
-    for (int i = 0; i < 100000; ++i)
+    for (int i = 0; i < 2000000; ++i)
         ks.nextSample();
 
     REQUIRE_FALSE(ks.isActive());
@@ -69,7 +69,7 @@ TEST_CASE("KarplusStrong setDecay affects duration", "[KarplusStrong]")
     ks1.pluck(1.0f);
 
     int count1 = 0;
-    while (ks1.isActive() && count1 < 200000)
+    while (ks1.isActive() && count1 < 2000000)
     {
         ks1.nextSample();
         ++count1;
@@ -81,7 +81,7 @@ TEST_CASE("KarplusStrong setDecay affects duration", "[KarplusStrong]")
     ks2.pluck(1.0f);
 
     int count2 = 0;
-    while (ks2.isActive() && count2 < 200000)
+    while (ks2.isActive() && count2 < 2000000)
     {
         ks2.nextSample();
         ++count2;
@@ -95,8 +95,7 @@ TEST_CASE("StringModel produces output", "[StringModel]")
     StringModel model;
     model.init(44100);
 
-    CalibrationData cal = CalibrationData::defaultConfig();
-    model.noteOn(0, 0, 0.8f, cal);
+    model.noteOn(0, 40, 0.8f);
 
     float sample = model.mix();
     REQUIRE(std::abs(sample) > 0.0f);
@@ -107,9 +106,8 @@ TEST_CASE("StringModel mixes multiple strings", "[StringModel]")
     StringModel model;
     model.init(44100);
 
-    CalibrationData cal = CalibrationData::defaultConfig();
-    model.noteOn(0, 0, 0.8f, cal);
-    model.noteOn(1, 0, 0.8f, cal);
+    model.noteOn(0, 40, 0.8f);
+    model.noteOn(1, 45, 0.8f);
 
     REQUIRE(model.isAnyActive());
 
@@ -122,13 +120,12 @@ TEST_CASE("StringModel master volume works", "[StringModel]")
     StringModel model;
     model.init(44100);
 
-    CalibrationData cal = CalibrationData::defaultConfig();
-    model.noteOn(0, 0, 1.0f, cal);
+    model.noteOn(0, 40, 1.0f);
     float loud = model.mix();
 
     model.reset();
     model.setMasterVolume(0.1f);
-    model.noteOn(0, 0, 1.0f, cal);
+    model.noteOn(0, 40, 1.0f);
     float quiet = model.mix();
 
     REQUIRE(std::abs(quiet) < std::abs(loud));

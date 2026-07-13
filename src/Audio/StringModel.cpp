@@ -8,6 +8,7 @@ StringModel::StringModel() {}
 void StringModel::init(int sr)
 {
     sampleRate = sr;
+    body.init(sr);
     for (int i = 0; i < 6; ++i)
     {
         int note = CalibrationData::openStringNotes[i];
@@ -17,15 +18,20 @@ void StringModel::init(int sr)
     }
 }
 
-void StringModel::noteOn(int stringIndex, int fret, float velocity, const CalibrationData& cal)
+void StringModel::noteOn(int stringIndex, int midiNote, float velocity)
 {
     if (stringIndex < 0 || stringIndex >= 6)
         return;
 
-    int midiNote = cal.midiNoteForString(stringIndex, fret);
     float freq = 440.0f * std::pow(2.0f, static_cast<float>(midiNote - 69) / 12.0f);
 
     strings[stringIndex].init(freq, sampleRate);
+
+    float freqRatio = freq / 82.41f;
+    float decay = 0.996f * std::pow(0.998f, freqRatio);
+    decay = std::max(0.985f, std::min(0.999f, decay));
+    strings[stringIndex].setDecay(decay);
+
     strings[stringIndex].pluck(velocity);
     active[stringIndex] = true;
 }
@@ -50,6 +56,7 @@ float StringModel::mix()
                 active[i] = false;
         }
     }
+    output = body.process(output);
     return output * masterVolume / 6.0f;
 }
 
@@ -70,6 +77,7 @@ bool StringModel::isAnyActive() const
 
 void StringModel::reset()
 {
+    body.reset();
     for (int i = 0; i < 6; ++i)
     {
         strings[i].reset();

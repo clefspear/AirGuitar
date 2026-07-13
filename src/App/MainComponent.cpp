@@ -2,6 +2,8 @@
 #include "Application.h"
 #include "CrashLogger.h"
 #include <opencv2/imgcodecs.hpp>
+#include <chrono>
+#include <cmath>
 
 namespace AirGuitar {
 
@@ -23,9 +25,29 @@ MainComponent::MainComponent()
     physicsEngine->setCalibration(calibration);
 
     audioEngine = std::make_unique<AudioEngine>();
+    midiOutput = std::make_unique<AirGuitarMidiOutput>();
+
+    calWizard = std::make_unique<CalibrationWizard>();
+    calWizard->setCompleteCallback([this](const CalibrationData& cal) {
+        calibration = cal;
+        physicsEngine->setCalibration(cal);
+        calibrationManager.save(cal, "");
+        CrashLogger::instance().logInfo("Calibration saved");
+    });
+
+    auto devices = AirGuitarMidiOutput::getAvailableDevices();
+    if (!devices.empty())
+    {
+        midiConnected = midiOutput->openDevice(devices[0]);
+        if (midiConnected)
+            CrashLogger::instance().logInfo("MIDI connected: " + devices[0]);
+    }
+
     physicsEngine->setNoteCallback([this](const NoteEvent& evt) {
         if (audioEngine)
             audioEngine->handleNoteEvent(evt);
+        if (midiOutput && midiConnected)
+            midiOutput->processNoteEvent(evt);
     });
 
     physicsEngine->start();
@@ -60,6 +82,13 @@ MainComponent::MainComponent()
             {
                 cameraReady = true;
                 handPipeline->start();
+
+                handPipeline->setFrameCallback(
+                    [this](const FrameData& frame)
+                    {
+                        if (physicsEngine)
+                            physicsEngine->pushFrame(frame);
+                    });
 
                 camera->setFrameCallback(
                     [this](const cv::Mat& frame, int64_t timestampMs)
@@ -102,6 +131,8 @@ MainComponent::MainComponent()
     }
 
     startTimerHz(30);
+    setWantsKeyboardFocus(true);
+    grabKeyboardFocus();
 }
 
 MainComponent::~MainComponent()
@@ -109,6 +140,7 @@ MainComponent::~MainComponent()
     stopTimer();
     CrashLogger::instance().logInfo("Shutting down");
     if (physicsEngine) physicsEngine->stop();
+    if (midiOutput) midiOutput->closeDevice();
     if (handPipeline) handPipeline->stop();
     if (camera) camera->stopCapture();
 }
@@ -171,6 +203,10 @@ void MainComponent::paint(juce::Graphics& g)
                         frame.cols, frame.rows);
 
             auto landmarks = handPipeline->getLatestLandmarks();
+
+            if (calWizard && calWizard->isActive())
+                calWizard->feedLandmarks(landmarks);
+
             for (const auto& hand : landmarks.hands)
             {
                 juce::Colour colour = hand.isLeft
@@ -179,18 +215,24 @@ void MainComponent::paint(juce::Graphics& g)
                 drawLandmarks(g, hand, colour);
             }
             drawPose(g, landmarks.pose);
-
-            if (physicsEngine)
-            {
-                physicsEngine->pushFrame(landmarks);
-            }
         }
     }
 
     if (physicsEngine && cameraReady)
     {
         drawStrumZone(g);
-        drawChordOverlay(g, physicsEngine->getLatestState());
+        drawNoteDisplay(g, lastState);
+        drawChordOverlay(g, lastState);
+        drawFunModeIndicator(g);
+    }
+
+    if (showHelp)
+        drawHelpOverlay(g);
+
+    if (calWizard && calWizard->isActive())
+    {
+        calWizard->setBounds(getLocalBounds());
+        calWizard->paint(g);
     }
 
     if (initError != InitError::None)
@@ -211,11 +253,91 @@ void MainComponent::timerCallback()
         if (handPipeline) inferenceFps = handPipeline->getInferenceRate();
         if (camera) captureFps = camera->getFrameRate();
     }
+
+    if (physicsEngine)
+        lastState = physicsEngine->getLatestState();
+
+    if (lastState.tracking && !lastState.chordName.empty())
+        noteOpacity = std::min(1.0f, noteOpacity + 0.08f);
+    else
+        noteOpacity = std::max(0.0f, noteOpacity - 0.04f);
+
+    glowPhase += 0.05f;
+    if (glowPhase > 6.28318f)
+        glowPhase -= 6.28318f;
+
     repaint();
 }
 
 void MainComponent::handleMessage(const juce::Message&)
 {
+}
+
+bool MainComponent::keyPressed(const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::escapeKey)
+    {
+        if (calWizard && calWizard->isActive())
+        {
+            calWizard->keyPressed(key);
+            return true;
+        }
+        if (showHelp)
+        {
+            showHelp = false;
+            return true;
+        }
+        return false;
+    }
+
+    if (key == juce::KeyPress('?') || key == juce::KeyPress('/'))
+    {
+        showHelp = !showHelp;
+        return true;
+    }
+
+    if (key == juce::KeyPress('f') || key == juce::KeyPress('F'))
+    {
+        funMode = !funMode;
+        calibration.funMode = funMode;
+        physicsEngine->setCalibration(calibration);
+        CrashLogger::instance().logInfo("Fun mode: " + std::string(funMode ? "ON" : "OFF"));
+        return true;
+    }
+
+    if (key == juce::KeyPress('c') || key == juce::KeyPress('C'))
+    {
+        if (calWizard && !calWizard->isActive())
+        {
+            calWizard->start();
+            calWizard->repaint();
+            return true;
+        }
+    }
+
+    if (key == juce::KeyPress('m') || key == juce::KeyPress('M'))
+    {
+        if (midiConnected)
+        {
+            midiOutput->closeDevice();
+            midiConnected = false;
+        }
+        else
+        {
+            auto devices = AirGuitarMidiOutput::getAvailableDevices();
+            if (!devices.empty())
+                midiConnected = midiOutput->openDevice(devices[0]);
+        }
+        return true;
+    }
+
+    if (calWizard && calWizard->isActive())
+    {
+        calWizard->keyPressed(key);
+        return true;
+    }
+
+    return false;
 }
 
 juce::File MainComponent::findModelsDirectory()
@@ -278,8 +400,13 @@ void MainComponent::drawDebugOverlay(juce::Graphics& g)
             auto& first = landmarks.hands[0];
             g.drawText("Left hand: " + juce::String(first.isLeft ? "yes" : "no"),
                        x, y, 200, lineH, juce::Justification::left);
+            y += lineH;
         }
     }
+
+    g.setColour(midiConnected ? juce::Colours::limegreen : juce::Colours::grey);
+    g.drawText("MIDI: " + juce::String(midiConnected ? "connected" : "none"),
+               x, y, 200, lineH, juce::Justification::left);
 }
 
 void MainComponent::drawErrorOverlay(juce::Graphics& g)
@@ -428,6 +555,219 @@ void MainComponent::drawStrumZone(juce::Graphics& g)
         g.drawText("S" + juce::String(i + 1), right + 5, y - 6, 25, 12,
                    juce::Justification::left);
     }
+}
+
+void MainComponent::mouseDown(const juce::MouseEvent& event)
+{
+    if (showHelp)
+    {
+        showHelp = false;
+        return;
+    }
+
+    auto pos = event.getPosition().toFloat();
+    auto bounds = getLocalBounds().toFloat();
+    float szLeft = bounds.getWidth() * calibration.strumZoneLeft;
+    float szRight = bounds.getWidth() * calibration.strumZoneRight;
+    float szTop = bounds.getHeight() * calibration.strumZoneTop;
+    float szBottom = bounds.getHeight() * calibration.strumZoneBottom;
+
+    if (pos.x >= szLeft && pos.x <= szRight && pos.y >= szTop && pos.y <= szBottom)
+    {
+        int stringIdx = static_cast<int>(
+            (pos.y - szTop) / (szBottom - szTop) * 5.0f + 0.5f);
+        stringIdx = std::max(0, std::min(5, stringIdx));
+        int fret = lastState.fretState.fret;
+        int midiNote = calibration.midiNoteForString(stringIdx, fret);
+        NoteEvent evt;
+        evt.type = NoteEventType::NoteOn;
+        evt.midiNote = midiNote;
+        evt.stringIndex = stringIdx;
+        evt.fret = fret;
+        evt.velocity = 0.7f;
+        evt.timestampMs = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (audioEngine)
+            audioEngine->handleNoteEvent(evt);
+        if (midiOutput && midiConnected)
+            midiOutput->processNoteEvent(evt);
+        mouseNoteString = stringIdx;
+    }
+}
+
+void MainComponent::mouseUp(const juce::MouseEvent&)
+{
+    if (mouseNoteString >= 0)
+    {
+        NoteEvent evt;
+        evt.type = NoteEventType::NoteOff;
+        evt.stringIndex = mouseNoteString;
+        evt.midiNote = -1;
+        evt.velocity = 0.0f;
+        evt.timestampMs = static_cast<int64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (audioEngine)
+            audioEngine->handleNoteEvent(evt);
+        if (midiOutput && midiConnected)
+            midiOutput->processNoteEvent(evt);
+        mouseNoteString = -1;
+    }
+}
+
+void MainComponent::mouseMove(const juce::MouseEvent& event)
+{
+    auto pos = event.getPosition().toFloat();
+    auto bounds = getLocalBounds().toFloat();
+    float szLeft = bounds.getWidth() * calibration.strumZoneLeft;
+    float szRight = bounds.getWidth() * calibration.strumZoneRight;
+    float szTop = bounds.getHeight() * calibration.strumZoneTop;
+    float szBottom = bounds.getHeight() * calibration.strumZoneBottom;
+
+    bool wasInZone = mouseInStrumZone;
+    mouseInStrumZone = (pos.x >= szLeft && pos.x <= szRight
+                     && pos.y >= szTop && pos.y <= szBottom);
+
+    if (mouseInStrumZone != wasInZone)
+        setMouseCursor(mouseInStrumZone
+            ? juce::MouseCursor::PointingHandCursor
+            : juce::MouseCursor::NormalCursor);
+}
+
+void MainComponent::mouseDrag(const juce::MouseEvent& event)
+{
+    mouseMove(event);
+}
+
+void MainComponent::drawNoteDisplay(juce::Graphics& g, const PhysicsState& state)
+{
+    if (noteOpacity < 0.01f || !state.tracking)
+        return;
+
+    auto bounds = getLocalBounds().toFloat();
+    float alpha = noteOpacity * 0.45f;
+    float glow = 0.5f + 0.5f * std::sin(glowPhase);
+    float glowAlpha = alpha * (0.7f + 0.3f * glow);
+
+    float noteX = bounds.getWidth() * 0.02f;
+    float noteY = bounds.getHeight() * 0.35f;
+
+    g.setColour(juce::Colours::cyan.withAlpha(glowAlpha * 0.15f));
+    g.fillRoundedRectangle(noteX - 10, noteY - 15, 160, 180, 10.0f);
+
+    g.setFont(juce::Font(juce::FontOptions(36.0f, juce::Font::bold)));
+    g.setColour(juce::Colours::cyan.withAlpha(glowAlpha));
+    g.drawText(state.chordName, noteX, noteY, 140, 45,
+               juce::Justification::centred);
+
+    g.setFont(juce::Font(juce::FontOptions(13.0f)));
+    g.setColour(juce::Colours::white.withAlpha(alpha * 0.8f));
+    g.drawText("Fret " + juce::String(state.fretState.fret),
+               noteX, noteY + 42, 140, 18,
+               juce::Justification::centred);
+
+    static const char* stringNames[] = {"E", "A", "D", "G", "B", "e"};
+    for (int i = 0; i < 6; ++i)
+    {
+        float y = noteY + 68 + static_cast<float>(i) * 17.0f;
+        bool active = state.fretState.activeStrings[i] >= 0;
+
+        float noteGlow = active ? glowAlpha : alpha * 0.3f;
+        juce::Colour col = active ? juce::Colours::limegreen : juce::Colours::grey;
+        g.setColour(col.withAlpha(noteGlow));
+
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.drawText(juce::String(stringNames[i]), noteX + 5, y, 20, 15,
+                   juce::Justification::centredLeft);
+
+        if (active)
+        {
+            int midiNote = calibration.midiNoteForString(i, state.fretState.fret);
+            std::string name = ChordClassifier::noteName(midiNote);
+            g.setColour(juce::Colours::white.withAlpha(noteGlow));
+            g.drawText(name, noteX + 28, y, 30, 15,
+                       juce::Justification::centredLeft);
+        }
+    }
+
+    if (state.strumming)
+    {
+        g.setFont(juce::Font(juce::FontOptions(11.0f)));
+        g.setColour(juce::Colours::yellow.withAlpha(glowAlpha));
+        juce::String dir = state.strumDirection == StrumDirection::Down ? "DN" : "UP";
+        g.drawText(dir + " " + juce::String(state.strumVelocity, 2),
+                   noteX, noteY + 170, 140, 15,
+                   juce::Justification::centred);
+    }
+}
+
+void MainComponent::drawHelpOverlay(juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+
+    g.setColour(juce::Colours::black.withAlpha(0.75f));
+    g.fillRect(bounds);
+
+    auto center = bounds.getCentre();
+    float boxW = 380.0f;
+    float boxH = 320.0f;
+    auto box = juce::Rectangle<float>(
+        center.x - boxW / 2.0f, center.y - boxH / 2.0f,
+        boxW, boxH);
+
+    g.setColour(juce::Colours::darkgrey.withAlpha(0.95f));
+    g.fillRoundedRectangle(box, 12.0f);
+
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::Font(juce::FontOptions(22.0f)));
+    g.drawText("Keyboard Shortcuts", box.reduced(20).removeFromTop(40),
+               juce::Justification::centred);
+
+    struct Shortcut { const char* key; const char* desc; };
+    Shortcut shortcuts[] = {
+        {"C", "Start calibration wizard"},
+        {"F", "Toggle fun mode"},
+        {"M", "Toggle MIDI output"},
+        {"?", "Show/hide this help"},
+        {"Esc", "Cancel / close"},
+        {"Click", "Play note in strum zone"},
+    };
+
+    g.setFont(juce::Font(juce::FontOptions(14.0f)));
+    auto content = box.reduced(30, 0).withTrimmedTop(50);
+
+    for (auto& s : shortcuts)
+    {
+        auto row = content.removeFromTop(28);
+        auto keyArea = row.removeFromLeft(70);
+
+        g.setColour(juce::Colours::cyan.withAlpha(0.9f));
+        g.drawText(s.key, keyArea, juce::Justification::centredRight);
+
+        g.setColour(juce::Colours::lightgrey);
+        g.drawText(s.desc, row.reduced(5, 0),
+                   juce::Justification::centredLeft);
+    }
+}
+
+void MainComponent::drawFunModeIndicator(juce::Graphics& g)
+{
+    if (!funMode)
+        return;
+
+    auto bounds = getLocalBounds().toFloat();
+    float x = bounds.getWidth() - 80.0f;
+    float y = 10.0f;
+
+    float glow = 0.7f + 0.3f * std::sin(glowPhase * 1.5f);
+
+    g.setColour(juce::Colours::magenta.withAlpha(0.12f * glow));
+    g.fillRoundedRectangle(x - 5, y - 2, 75, 22, 6.0f);
+
+    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
+    g.setColour(juce::Colours::magenta.withAlpha(0.8f * glow));
+    g.drawText("FUN", x, y, 65, 18, juce::Justification::centred);
 }
 
 } // namespace AirGuitar
