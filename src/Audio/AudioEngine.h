@@ -3,21 +3,25 @@
 #include "Physics/NoteEvent.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
-#include <juce_audio_utils/juce_audio_utils.h>
 #include <mutex>
 #include <queue>
 
 namespace AirGuitar {
 
-class AudioEngine : public juce::AudioAppComponent
+class AudioEngine : public juce::AudioIODeviceCallback
 {
 public:
     AudioEngine();
     ~AudioEngine() override;
 
-    void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override;
-    void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override;
-    void releaseResources() override;
+    void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
+    void audioDeviceStopped() override;
+    void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
+                                          int numInputChannels,
+                                          float* const* outputChannelData,
+                                          int numOutputChannels,
+                                          int numSamples,
+                                          const juce::AudioIODeviceCallbackContext& context) override;
 
     void handleNoteEvent(const NoteEvent& evt);
     void setMasterVolume(float vol);
@@ -25,6 +29,7 @@ public:
     bool isInitialised() const { return prepared; }
 
 private:
+    juce::AudioDeviceManager deviceManager;
     StringModel stringModel;
     std::queue<NoteEvent> eventQueue;
     std::mutex queueMutex;

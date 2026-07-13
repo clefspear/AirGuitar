@@ -4,23 +4,40 @@ namespace AirGuitar {
 
 AudioEngine::AudioEngine()
 {
-    setAudioChannels(0, 2);
+    deviceManager.addAudioCallback(this);
+    juce::String error = deviceManager.initialiseWithDefaultDevices(0, 2);
+    if (error.isNotEmpty())
+    {
+        deviceManager.removeAudioCallback(this);
+    }
 }
 
 AudioEngine::~AudioEngine()
 {
-    shutdownAudio();
+    deviceManager.removeAudioCallback(this);
 }
 
-void AudioEngine::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
+void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
-    stringModel.init(static_cast<int>(sampleRate));
+    if (device != nullptr)
+        stringModel.init(static_cast<int>(device->getCurrentSampleRate()));
     prepared = true;
 }
 
-void AudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
+void AudioEngine::audioDeviceStopped()
 {
-    bufferToFill.clearActiveBufferRegion();
+    prepared = false;
+}
+
+void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
+                                                    int numInputChannels,
+                                                    float* const* outputChannelData,
+                                                    int numOutputChannels,
+                                                    int numSamples,
+                                                    const juce::AudioIODeviceCallbackContext& context)
+{
+    for (int ch = 0; ch < numOutputChannels; ++ch)
+        juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
 
     {
         std::lock_guard<std::mutex> lock(queueMutex);
@@ -35,23 +52,16 @@ void AudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferTo
         }
     }
 
-    auto* leftChannel = bufferToFill.buffer->getWritePointer(0, bufferToFill.startSample);
-    auto* rightChannel = bufferToFill.buffer->getNumChannels() > 1
-        ? bufferToFill.buffer->getWritePointer(1, bufferToFill.startSample)
-        : nullptr;
-
-    for (int sample = 0; sample < bufferToFill.numSamples; ++sample)
+    if (numOutputChannels > 0)
     {
-        float output = stringModel.mix();
-        leftChannel[sample] = output;
-        if (rightChannel)
-            rightChannel[sample] = output;
-    }
-}
+        auto* leftChannel = outputChannelData[0];
+        for (int sample = 0; sample < numSamples; ++sample)
+            leftChannel[sample] = stringModel.mix();
 
-void AudioEngine::releaseResources()
-{
-    prepared = false;
+        if (numOutputChannels > 1)
+            juce::FloatVectorOperations::copyWithMultiply(
+                outputChannelData[1], leftChannel, 1.0f, numSamples);
+    }
 }
 
 void AudioEngine::handleNoteEvent(const NoteEvent& evt)
