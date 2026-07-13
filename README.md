@@ -8,8 +8,13 @@
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)](#)
 [![platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#)
 [![license](https://img.shields.io/badge/license-Apache%202.0-green)](#)
+[![tests](https://img.shields.io/badge/tests-88%20passing-brightgreen)](#)
 
-**Play guitar with nothing in your hands.** A webcam watches your hands, a physics model turns your motion into vibrating strings, and a Karplus–Strong synth turns those strings into sound — end to end in C++, targeting **under 15 ms** from camera frame to audio out on Apple Silicon.
+### Play guitar with nothing in your hands.
+
+A webcam watches your hands, a physics model turns your motion into vibrating strings, and a Karplus–Strong synth turns those strings into sound — end to end in C++, targeting **under 15 ms** from camera frame to audio out on Apple Silicon.
+
+**[Quick Start](#quick-start)** · **[How It Works](#how-it-works)** · **[Roadmap](#roadmap)** · **[Status](#status)** · **[Tech Stack](#tech-stack)**
 
 </div>
 
@@ -19,9 +24,11 @@
 
 Three pieces, three threads, one rule: a slow vision frame must never stall the render or the audio callback.
 
-1. **See** — A webcam frame goes through MediaPipe's palm, hand, and pose models (TensorFlow Lite) to recover 21 hand landmarks and 33 body keypoints.
-2. **Feel** — A 240 Hz physics loop reads those landmarks as plucks, fret presses, and a strumming arm.
-3. **Hear** — A Karplus–Strong string model (with a sample layer on top) renders the result into audio.
+| Step | What happens |
+| --- | --- |
+| 👁️ **See** | A webcam frame runs through MediaPipe's palm, hand, and pose models (TensorFlow Lite) to recover 21 hand landmarks and 33 body keypoints. |
+| 🤚 **Feel** | A 240 Hz physics loop reads those landmarks as plucks, fret presses, and a strumming arm. |
+| 🔊 **Hear** | A Karplus–Strong string model, with a sample layer on top, renders the result into audio. |
 
 ---
 
@@ -42,6 +49,36 @@ Hand detection is expensive, so it's amortized: the palm detector runs once ever
 <div align="center">
 <img src=".github/assets/pipeline.svg" alt="Vision pipeline: camera frame → palm detector → crop and warp → hand and pose landmarkers → atomic results" width="96%">
 </div>
+
+---
+
+## Roadmap
+
+AirGuitar starts as a solo instrument. It won't stay that way.
+
+### 🎧 Play along with Spotify & YouTube
+
+The idea: point AirGuitar at whatever's already playing — a song on Spotify, a live stream on YouTube, anything coming out of your speakers — and jam over it like it's your own backing track.
+
+| Feature | What it does |
+| --- | --- |
+| **Ambient audio capture** | Taps system audio output (no file import needed) so any app can be the backing track. |
+| **Live BPM + key detection** | Analyzes the captured stream in real time to lock the physics engine's timing and the string tuning to the song. |
+| **Chord-aware fretboard hints** | Overlays suggested chords/scales on screen as the song progresses, so you always know where to put your hands. |
+| **Auto-mix ducking** | Gently ducks the backing track under your strums so your playing stays audible without killing the song. |
+
+### 🎸 Jam with friends, on other instruments
+
+The longer-term idea: turn AirGuitar into AirBand — everyone air-plays a different instrument, and it all comes together in real time.
+
+| Feature | What it does |
+| --- | --- |
+| **Multi-user sessions** | Each person joins from their own camera/machine; a shared low-latency session keeps everyone in sync. |
+| **New instrument models** | Bass, drums (via arm/stick tracking), and keys, each with their own gesture vocabulary layered on the existing hand-pose pipeline. |
+| **Shared clock** | One tempo/key source (from a song, a leader, or a click) so every instrument locks together instead of drifting. |
+| **Session recording** | Bounce a jam down to a shareable audio (or MIDI) file afterward. |
+
+> These are the two big swings on the horizon — not yet started, but they're what the current single-player, single-instrument architecture is being built to grow into.
 
 ---
 
@@ -91,6 +128,8 @@ ctest --preset debug
 | Crash logging | ✅ Working |
 | One Euro filter (jitter smoothing) | ✅ Working |
 | 88 tests, 280 assertions | ✅ All passing |
+| Spotify / YouTube play-along mode | 🔜 Planned |
+| Multi-user jam sessions | 🔜 Planned |
 
 ---
 
