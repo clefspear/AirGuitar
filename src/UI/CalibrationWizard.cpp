@@ -21,6 +21,19 @@ void CalibrationWizard::start()
     step = Step::Welcome;
     completed = false;
     dwellFrames = 0;
+    graceFrames = 0;
+    welcomeFrames = 0;
+    handednessAutoDetected = false;
+    fret1X = 0.0f;
+    fret12X = 0.0f;
+    fretMinY = 1.0f;
+    fretMaxY = 0.0f;
+    strumLeft = 0.0f;
+    strumRight = 0.0f;
+    strumTop = 0.0f;
+    strumBottom = 0.0f;
+    fretCaptured = false;
+    strumCaptured = false;
     result = CalibrationData::defaultConfig();
     grabKeyboardFocus();
     startTimerHz(30);
@@ -43,12 +56,93 @@ void CalibrationWizard::feedLandmarks(const FrameData& landmarks)
     latestLandmarks = landmarks;
 }
 
+const HandLandmarks* CalibrationWizard::findFretHand() const
+{
+    for (auto& hand : latestLandmarks.hands)
+    {
+        if (!hand.valid() || hand.landmarks.size() < 21)
+            continue;
+
+        if (result.leftHandFretting)
+        {
+            if (hand.isLeft)
+                return &hand;
+        }
+        else
+        {
+            if (!hand.isLeft)
+                return &hand;
+        }
+    }
+    return nullptr;
+}
+
+const HandLandmarks* CalibrationWizard::findStrumHand() const
+{
+    for (auto& hand : latestLandmarks.hands)
+    {
+        if (!hand.valid() || hand.landmarks.size() < 21)
+            continue;
+
+        if (result.leftHandFretting)
+        {
+            if (!hand.isLeft)
+                return &hand;
+        }
+        else
+        {
+            if (hand.isLeft)
+                return &hand;
+        }
+    }
+    return nullptr;
+}
+
 void CalibrationWizard::timerCallback()
 {
-    if (step == Step::Fret1 || step == Step::Fret12 || step == Step::StrumZone)
+    if (step == Step::Welcome)
     {
-        if (!latestLandmarks.hands.empty())
+        ++welcomeFrames;
+        if (welcomeFrames >= kWelcomeAutoAdvanceFrames)
+            advanceStep();
+    }
+    else if (step == Step::Handedness)
+    {
+        if (!handednessAutoDetected)
         {
+            for (auto& hand : latestLandmarks.hands)
+            {
+                if (!hand.valid() || hand.landmarks.size() < 21)
+                    continue;
+
+                float handCenterX = 0.0f;
+                for (int i = 0; i < 21; ++i)
+                    handCenterX += hand.landmarks[i].x;
+                handCenterX /= 21.0f;
+
+                if (handCenterX < 0.5f)
+                    result.leftHandFretting = hand.isLeft;
+                else
+                    result.leftHandFretting = !hand.isLeft;
+
+                handednessAutoDetected = true;
+                advanceStep();
+                break;
+            }
+        }
+    }
+    else if (step == Step::Fret1 || step == Step::Fret12 || step == Step::StrumZone)
+    {
+        bool handVisible = false;
+
+        if (step == Step::StrumZone)
+            handVisible = findStrumHand() != nullptr;
+        else
+            handVisible = findFretHand() != nullptr;
+
+        if (handVisible)
+        {
+            graceFrames = 0;
             ++dwellFrames;
             if (dwellFrames >= kDwellRequired)
             {
@@ -57,7 +151,14 @@ void CalibrationWizard::timerCallback()
         }
         else
         {
-            dwellFrames = std::max(0, dwellFrames - 2);
+            if (graceFrames < kGraceFrames)
+            {
+                ++graceFrames;
+            }
+            else
+            {
+                dwellFrames = std::max(0, dwellFrames - 1);
+            }
         }
     }
     repaint();
@@ -74,7 +175,9 @@ bool CalibrationWizard::keyPressed(const juce::KeyPress& key)
     if (step == Step::Welcome || step == Step::Complete)
     {
         advanceStep();
+        return true;
     }
+
     return true;
 }
 
@@ -82,64 +185,80 @@ void CalibrationWizard::advanceStep()
 {
     int currentStep = static_cast<int>(step);
 
-    if (step == Step::Fret1 && !latestLandmarks.hands.empty())
+    if (step == Step::Fret1)
     {
-        float sumX = 0.0f;
-        int count = 0;
-        for (auto& hand : latestLandmarks.hands)
+        const auto* fretHand = findFretHand();
+        if (fretHand)
         {
-            if (hand.valid() && hand.landmarks.size() >= 21)
+            float sumX = 0.0f;
+            int count = 0;
+            float minY = 1.0f, maxY = 0.0f;
+            for (int i = 0; i < 21; ++i)
             {
-                for (int i = 0; i < 21; ++i)
-                    sumX += hand.landmarks[i].x;
-                count += 21;
+                sumX += fretHand->landmarks[i].x;
+                minY = std::min(minY, fretHand->landmarks[i].y);
+                maxY = std::max(maxY, fretHand->landmarks[i].y);
+                ++count;
+            }
+            if (count > 0)
+            {
+                fret1X = sumX / static_cast<float>(count);
+                fretMinY = std::min(fretMinY, minY);
+                fretMaxY = std::max(fretMaxY, maxY);
+                fretCaptured = true;
             }
         }
-        if (count > 0)
-            fret1X = sumX / static_cast<float>(count);
     }
-    else if (step == Step::Fret12 && !latestLandmarks.hands.empty())
+    else if (step == Step::Fret12)
     {
-        float sumX = 0.0f;
-        int count = 0;
-        for (auto& hand : latestLandmarks.hands)
+        const auto* fretHand = findFretHand();
+        if (fretHand)
         {
-            if (hand.valid() && hand.landmarks.size() >= 21)
+            float sumX = 0.0f;
+            int count = 0;
+            float minY = 1.0f, maxY = 0.0f;
+            for (int i = 0; i < 21; ++i)
             {
-                for (int i = 0; i < 21; ++i)
-                    sumX += hand.landmarks[i].x;
-                count += 21;
+                sumX += fretHand->landmarks[i].x;
+                minY = std::min(minY, fretHand->landmarks[i].y);
+                maxY = std::max(maxY, fretHand->landmarks[i].y);
+                ++count;
+            }
+            if (count > 0)
+            {
+                fret12X = sumX / static_cast<float>(count);
+                fretMinY = std::min(fretMinY, minY);
+                fretMaxY = std::max(fretMaxY, maxY);
+                fretCaptured = true;
             }
         }
-        if (count > 0)
-            fret12X = sumX / static_cast<float>(count);
     }
-    else if (step == Step::StrumZone && !latestLandmarks.hands.empty())
+    else if (step == Step::StrumZone)
     {
-        float minX = 1.0f, maxX = 0.0f;
-        float minY = 1.0f, maxY = 0.0f;
-        for (auto& hand : latestLandmarks.hands)
+        const auto* strumHand = findStrumHand();
+        if (strumHand)
         {
-            if (hand.valid() && hand.landmarks.size() >= 21)
+            float minX = 1.0f, maxX = 0.0f;
+            float minY = 1.0f, maxY = 0.0f;
+            for (const auto& lm : strumHand->landmarks)
             {
-                for (auto& lm : hand.landmarks)
-                {
-                    minX = std::min(minX, lm.x);
-                    maxX = std::max(maxX, lm.x);
-                    minY = std::min(minY, lm.y);
-                    maxY = std::max(maxY, lm.y);
-                }
+                minX = std::min(minX, lm.x);
+                maxX = std::max(maxX, lm.x);
+                minY = std::min(minY, lm.y);
+                maxY = std::max(maxY, lm.y);
             }
+            strumLeft = minX;
+            strumRight = maxX;
+            strumTop = minY;
+            strumBottom = maxY;
+            strumCaptured = true;
         }
-        strumLeft = minX;
-        strumRight = maxX;
-        strumTop = minY;
-        strumBottom = maxY;
     }
 
     ++currentStep;
     step = static_cast<Step>(currentStep);
     dwellFrames = 0;
+    graceFrames = 0;
 
     if (step == Step::Complete)
     {
@@ -154,6 +273,12 @@ void CalibrationWizard::advanceStep()
 
 void CalibrationWizard::computeCalibration()
 {
+    if (!fretCaptured || !strumCaptured)
+    {
+        result = CalibrationData::defaultConfig();
+        return;
+    }
+
     float left = std::min(fret1X, fret12X);
     float right = std::max(fret1X, fret12X);
     float range = right - left;
@@ -169,14 +294,22 @@ void CalibrationWizard::computeCalibration()
     result.fret12X = right;
     result.fretScaleX = range / 11.0f;
 
-    float margin = 0.02f;
+    float margin = 0.05f;
     result.strumZoneLeft = std::max(0.0f, strumLeft - margin);
     result.strumZoneRight = std::min(1.0f, strumRight + margin);
     result.strumZoneTop = std::max(0.0f, strumTop - margin);
     result.strumZoneBottom = std::min(1.0f, strumBottom + margin);
 
-    result.stringTopY = result.strumZoneTop;
-    result.stringBottomY = result.strumZoneBottom;
+    if (fretMaxY > fretMinY)
+    {
+        result.stringTopY = std::max(0.0f, fretMinY - margin);
+        result.stringBottomY = std::min(1.0f, fretMaxY + margin);
+    }
+    else
+    {
+        result.stringTopY = result.strumZoneTop;
+        result.stringBottomY = result.strumZoneBottom;
+    }
 }
 
 void CalibrationWizard::paint(juce::Graphics& g)
@@ -191,7 +324,7 @@ void CalibrationWizard::paint(juce::Graphics& g)
 
     auto center = bounds.getCentre();
     float boxW = 500.0f;
-    float boxH = 260.0f;
+    float boxH = 300.0f;
     auto box = juce::Rectangle<float>(
         center.x - boxW / 2.0f, center.y - boxH / 2.0f,
         boxW, boxH);
@@ -210,8 +343,13 @@ void CalibrationWizard::paint(juce::Graphics& g)
     {
         case Step::Welcome:
             title = "Calibration Wizard";
-            instruction = "Press any key to begin";
-            hint = "You'll be asked to show hand positions";
+            instruction = "Starting...";
+            hint = "Show your hands to the camera";
+            break;
+        case Step::Handedness:
+            title = "Handedness";
+            instruction = "Detecting hand position...";
+            hint = "Show your fretting hand to the camera";
             break;
         case Step::Fret1:
             title = "Step 1: Fret 1";
@@ -237,23 +375,35 @@ void CalibrationWizard::paint(juce::Graphics& g)
             break;
     }
 
-    g.drawText(title, box.reduced(20).removeFromTop(50),
+    auto textArea = box.reduced(20);
+    g.drawText(title, textArea.removeFromTop(50),
                juce::Justification::centred);
 
     g.setFont(juce::Font(juce::FontOptions(18.0f)));
     g.setColour(juce::Colours::lightgrey);
-    g.drawText(instruction, box.reduced(20).removeFromTop(40),
+    g.drawText(instruction, textArea.removeFromTop(40),
                juce::Justification::centred);
 
     if (!hint.empty())
     {
         g.setFont(juce::Font(juce::FontOptions(14.0f)));
         g.setColour(juce::Colours::grey);
-        g.drawText(hint, box.reduced(20).removeFromTop(30),
+        g.drawText(hint, textArea.removeFromTop(30),
                    juce::Justification::centred);
     }
 
-    if (dwellFrames > 0 && step != Step::Welcome && step != Step::Complete)
+    if (step == Step::Handedness)
+    {
+        auto hintArea = box.reduced(40).withTop(box.getY() + 100).withBottom(box.getBottom() - 40);
+        g.setColour(juce::Colours::cyan.withAlpha(0.3f));
+        g.fillRoundedRectangle(hintArea, 8.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::Font(juce::FontOptions(16.0f)));
+        g.drawText("Detecting hand position...", hintArea,
+                   juce::Justification::centred);
+    }
+
+    if (dwellFrames > 0 && step != Step::Welcome && step != Step::Complete && step != Step::Handedness)
     {
         float progress = static_cast<float>(dwellFrames)
                        / static_cast<float>(kDwellRequired);
@@ -298,6 +448,23 @@ void CalibrationWizard::paint(juce::Graphics& g)
             g.drawText(name, x, noteArea.getY() + 14, colW, 16,
                        juce::Justification::centred);
         }
+
+        if (step == Step::Fret1 && fretCaptured)
+        {
+            g.setColour(juce::Colours::limegreen.withAlpha(0.7f));
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.drawText("Captured! fret1X=" + juce::String(fret1X, 3),
+                       box.reduced(20).removeFromBottom(15),
+                       juce::Justification::centred);
+        }
+        if (step == Step::Fret12 && fretCaptured)
+        {
+            g.setColour(juce::Colours::limegreen.withAlpha(0.7f));
+            g.setFont(juce::Font(juce::FontOptions(12.0f)));
+            g.drawText("Captured! fret12X=" + juce::String(fret12X, 3),
+                       box.reduced(20).removeFromBottom(15),
+                       juce::Justification::centred);
+        }
     }
 
     if (step == Step::StrumZone)
@@ -336,8 +503,10 @@ void CalibrationWizard::paint(juce::Graphics& g)
     if (step == Step::Complete)
     {
         g.setColour(juce::Colours::limegreen);
-        g.setFont(juce::Font(juce::FontOptions(16.0f)));
-        g.drawText("Fret 1 X: " + juce::String(fret1X, 3) +
+        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+
+        juce::String handStr = result.leftHandFretting ? "Left" : "Right";
+        g.drawText("Fret hand: " + handStr + "  |  Fret 1 X: " + juce::String(fret1X, 3) +
                    "  Fret 12 X: " + juce::String(fret12X, 3),
                    box.reduced(20).removeFromBottom(30),
                    juce::Justification::centred);

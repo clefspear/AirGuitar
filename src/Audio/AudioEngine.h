@@ -15,6 +15,7 @@ public:
     ~AudioEngine() override;
 
     void startAudio();
+    std::string getStartError() const { return startError; }
 
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override;
     void audioDeviceStopped() override;
@@ -38,6 +39,7 @@ private:
     bool prepared = false;
     bool audioStarted = false;
     float masterVolume = 0.7f;
+    std::string startError;
 };
 
 } // namespace AirGuitar

@@ -174,11 +174,13 @@ HandLandmarks HandLandmarker::decodeOutput(
         result.landmarks.push_back(lm);
     }
 
-    if (handedness != nullptr)
-    {
-        result.handednessScore = handedness[0];
-        result.isLeft = handedness[0] < 0.5f;
-    }
+    float sumX = 0.0f;
+    for (const auto& lm : result.landmarks)
+        sumX += lm.x;
+    float avgX = sumX / static_cast<float>(result.landmarks.size());
+
+    result.isLeft = avgX >= 0.5f;
+    result.handednessScore = (handedness != nullptr) ? handedness[0] : 0.5f;
 
     return result;
 }

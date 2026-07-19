@@ -7,12 +7,12 @@
 
 namespace AirGuitar {
 
-static constexpr float kAnchorStrides[] = {8.0f, 16.0f, 32.0f, 64.0f};
+static constexpr float kAnchorStrides[] = {8.0f, 16.0f};
 static constexpr float kAnchorScales[] = {
-    0.1484375f, 0.210f, 0.297f, 0.420f, 0.446f, 0.595f, 0.595f, 0.750f
+    0.1484375f, 0.210f, 0.297f, 0.420f
 };
 static constexpr float kAnchorOffset = 0.5f;
-static constexpr int kNumLayers = 4;
+static constexpr int kNumLayers = 2;
 static constexpr int kNumScalesPerLayer = 2;
 static constexpr float kRegressionScale = 0.1f;
 
@@ -33,6 +33,11 @@ bool PalmDetector::isLoaded() const
 }
 
 std::vector<DetectedPalm> PalmDetector::detect(const cv::Mat& frame)
+{
+    return detect(frame, kConfidenceThreshold);
+}
+
+std::vector<DetectedPalm> PalmDetector::detect(const cv::Mat& frame, float confidenceThreshold)
 {
     if (!isLoaded() || frame.empty())
         return {};
@@ -55,7 +60,7 @@ std::vector<DetectedPalm> PalmDetector::detect(const cv::Mat& frame)
     if (!outputData)
         return {};
 
-    auto detections = decodeOutput(outputData, padX, padY, scale);
+    auto detections = decodeOutput(outputData, padX, padY, scale, confidenceThreshold);
     return nonMaxSuppression(std::move(detections), kNmsThreshold);
 }
 
@@ -135,7 +140,8 @@ void PalmDetector::generateAnchors()
 }
 
 std::vector<DetectedPalm> PalmDetector::decodeOutput(
-    const float* output, float padX, float padY, float scale)
+    const float* output, float padX, float padY, float scale,
+    float confidenceThreshold)
 {
     std::vector<DetectedPalm> results;
     results.reserve(kNumAnchors);
@@ -145,10 +151,10 @@ std::vector<DetectedPalm> PalmDetector::decodeOutput(
 
     for (int i = 0; i < numAnchors; ++i)
     {
-        const float* raw = output + i * 18;
+        const float* raw = output + i * 19;
 
         float confidence = sigmoid(raw[4]);
-        if (confidence < kConfidenceThreshold)
+        if (confidence < confidenceThreshold)
             continue;
 
         float cx = raw[0] * kRegressionScale * anchors[i].box.width

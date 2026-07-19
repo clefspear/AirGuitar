@@ -1,5 +1,6 @@
 #include "HandPipeline.h"
 #include <algorithm>
+#include <iostream>
 
 namespace AirGuitar {
 
@@ -73,7 +74,7 @@ bool HandPipeline::isInitialised() const
 FrameData HandPipeline::getLatestLandmarks()
 {
     std::lock_guard<std::mutex> lock(resultMutex);
-    return latestResult;
+    return lastResultWithHands;
 }
 
 double HandPipeline::getInferenceRate() const
@@ -147,17 +148,37 @@ void HandPipeline::processFrame(const cv::Mat& frame, int64_t timestampMs)
     if (palmDetector && handLandmarker)
     {
         ++frameSkipCounter;
+        ++framesSinceLastPalmDetection;
         std::vector<DetectedPalm> palms;
 
-        if (frameSkipCounter >= kPalmDetectionInterval)
+        bool isDetectionFrame = (frameSkipCounter >= kPalmDetectionInterval);
+
+        if (isDetectionFrame)
         {
             palms = palmDetector->detect(frame);
             frameSkipCounter = 0;
-            previousPalms = palms;
-        }
-        else
-        {
-            palms = previousPalms;
+
+            static int palmLogCounter = 0;
+            if (++palmLogCounter % 15 == 0)
+            {
+                std::cout << "[HandPipeline] palms=" << palms.size();
+                for (size_t i = 0; i < palms.size(); ++i)
+                {
+                    auto& p = palms[i];
+                    std::cout << " p" << i << "=[cx=" << p.box.cx
+                              << " cy=" << p.box.cy
+                              << " w=" << p.box.width
+                              << " h=" << p.box.height
+                              << " conf=" << p.box.confidence << "]";
+                }
+                std::cout << std::endl;
+            }
+
+            if (!palms.empty())
+            {
+                trackedPalms = palms;
+                framesSinceLastPalmDetection = 0;
+            }
         }
 
         for (const auto& palm : palms)
@@ -166,15 +187,81 @@ void HandPipeline::processFrame(const cv::Mat& frame, int64_t timestampMs)
             if (hand.valid())
                 frameData.hands.push_back(hand);
         }
+
+        if (frameData.hands.empty() && !trackedPalms.empty()
+            && framesSinceLastPalmDetection <= kMaxTrackingFrames)
+        {
+            for (auto& palm : trackedPalms)
+            {
+                DetectedPalm expanded = palm;
+                expanded.box.width *= (1.0f + kTrackingBoxExpansion);
+                expanded.box.height *= (1.0f + kTrackingBoxExpansion);
+                auto hand = handLandmarker->detect(frame, expanded);
+                if (hand.valid())
+                {
+                    frameData.hands.push_back(hand);
+                    updateTrackedPalm(palm, hand);
+                }
+            }
+        }
+
+        if (framesSinceLastPalmDetection > kMaxTrackingFrames)
+            trackedPalms.clear();
+
+        if (frameData.hands.size() > PalmDetector::kMaxDetections)
+        {
+            std::sort(frameData.hands.begin(), frameData.hands.end(),
+                [](const HandLandmarks& a, const HandLandmarks& b) {
+                    return a.confidence() > b.confidence();
+                });
+            frameData.hands.resize(PalmDetector::kMaxDetections);
+        }
+
+        static int logCounter = 0;
+        if (++logCounter % 30 == 0)
+        {
+            std::cout << "[HandPipeline] palms=" << palms.size()
+                      << " hands=" << frameData.hands.size()
+                      << " tracked=" << trackedPalms.size()
+                      << " sinceDetect=" << framesSinceLastPalmDetection
+                      << std::endl;
+        }
     }
 
     {
         std::lock_guard<std::mutex> lock(resultMutex);
         latestResult = frameData;
+        if (frameData.hasHands())
+            lastResultWithHands = frameData;
     }
 
     if (frameCallback)
         frameCallback(frameData);
+}
+
+std::vector<DetectedPalm> HandPipeline::expandPalmBox(const DetectedPalm& palm, float expansion)
+{
+    DetectedPalm expanded = palm;
+    expanded.box.width *= (1.0f + expansion);
+    expanded.box.height *= (1.0f + expansion);
+    return {expanded};
+}
+
+bool HandPipeline::updateTrackedPalm(DetectedPalm& palm, const HandLandmarks& hand)
+{
+    if (hand.landmarks.empty())
+        return false;
+
+    float sumX = 0.0f, sumY = 0.0f;
+    for (const auto& lm : hand.landmarks)
+    {
+        sumX += lm.x;
+        sumY += lm.y;
+    }
+    float n = static_cast<float>(hand.landmarks.size());
+    palm.box.cx = sumX / n;
+    palm.box.cy = sumY / n;
+    return true;
 }
 
 } // namespace AirGuitar

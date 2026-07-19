@@ -6,6 +6,7 @@
 #include "Vision/HandPipeline.h"
 #include "Vision/Camera.h"
 #include "Physics/PhysicsEngine.h"
+#include "Physics/NoteEvent.h"
 #include "Audio/AudioEngine.h"
 #include "Audio/MidiOutput.h"
 #include "Calibration/CalibrationManager.h"
@@ -22,6 +23,7 @@ enum class InitError
     CameraOpenFailed,
     ModelLoadFailed,
     PipelineInitFailed,
+    AudioInitFailed,
 };
 
 class MainComponent : public juce::Component,
@@ -59,6 +61,7 @@ private:
     CalibrationData calibration;
     InitError initError = InitError::None;
     std::string initErrorMessage;
+    std::string audioInitError;
     std::atomic<bool> midiConnected{false};
     bool funMode = false;
     bool showHelp = false;
@@ -68,16 +71,22 @@ private:
     PhysicsState lastState;
     float noteOpacity = 0.0f;
     float glowPhase = 0.0f;
+    int cameraRetryCount = 0;
+    bool cameraStartFailed = false;
 
     void drawDebugOverlay(juce::Graphics&);
     void drawErrorOverlay(juce::Graphics&);
-    void drawLandmarks(juce::Graphics&, const HandLandmarks&, const juce::Colour&);
+    void drawLandmarks(juce::Graphics&, const HandLandmarks&, const juce::Colour&, const PhysicsState&);
     void drawPose(juce::Graphics&, const PoseLandmarks&);
     void drawChordOverlay(juce::Graphics&, const PhysicsState&);
     void drawStrumZone(juce::Graphics&);
+    void drawStrumIndicator(juce::Graphics&, const PhysicsState&);
+    void drawFretZone(juce::Graphics&, const PhysicsState&);
     void drawNoteDisplay(juce::Graphics&, const PhysicsState&);
     void drawHelpOverlay(juce::Graphics&);
     void drawFunModeIndicator(juce::Graphics&);
+
+    juce::Rectangle<float> getCameraArea() const;
 
     static juce::File findModelsDirectory();
 

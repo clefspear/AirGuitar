@@ -8,7 +8,7 @@
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue)](#)
 [![platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#)
 [![license](https://img.shields.io/badge/license-Apache%202.0-green)](#)
-[![tests](https://img.shields.io/badge/tests-88%20passing-brightgreen)](#)
+[![tests](https://img.shields.io/badge/tests-121%20passing-brightgreen)](#)
 
 ### Play guitar with nothing in your hands.
 
@@ -129,7 +129,7 @@ ctest --preset debug
 | Interactive UI (mouse play, fun mode, help overlay, note display) | ✅ Working |
 | Crash logging | ✅ Working |
 | One Euro filter (jitter smoothing) | ✅ Working |
-| 88 tests, 280 assertions | ✅ All passing |
+| 121 tests, 353 assertions | ✅ All passing |
 | Spotify / YouTube play-along mode | 🔜 Planned |
 | Multi-user jam sessions | 🔜 Planned |
 
@@ -165,7 +165,7 @@ AirGuitar/
 │  │                         #   BodyResonance
 │  ├─ Calibration/           # CalibrationManager, CalibrationData
 │  └─ UI/                    # CalibrationWizard
-├─ tests/                    # 88 test cases across 9 test files
+├─ tests/                    # 121 test cases across 9 test files
 ├─ scripts/                  # setup.sh, download_models.sh
 ├─ models/                   # .tflite files (downloaded)
 └─ resources/                # guitar samples (user-provided)

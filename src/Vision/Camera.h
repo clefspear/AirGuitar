@@ -36,6 +36,7 @@ public:
                int width = kDefaultWidth,
                int height = kDefaultHeight,
                int fps = kDefaultFps);
+    Error reopen();
     void close();
     bool isOpen() const;
 
@@ -69,6 +70,7 @@ private:
     int width = kDefaultWidth;
     int height = kDefaultHeight;
     int targetFps = kDefaultFps;
+    int lastDeviceId = 0;
     double measuredFps = 0.0;
 
     FrameCallback callback;

@@ -1,12 +1,14 @@
 #include "StrumDetector.h"
+#include "App/CrashLogger.h"
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace AirGuitar {
 
 StrumDetector::StrumDetector()
-    : xFilter(10.0f, 0.05f, 1.0f)
-    , yFilter(10.0f, 0.05f, 1.0f)
+    : xFilter(10.0f, 1.0f, 1.0f)
+    , yFilter(10.0f, 1.0f, 1.0f)
 {
 }
 
@@ -32,6 +34,10 @@ std::vector<NoteEvent> StrumDetector::update(const HandLandmarks& hand,
     if (prevTimestampMs > 0 && timestampMs > prevTimestampMs)
         dt = static_cast<float>(timestampMs - prevTimestampMs) / 1000.0f;
 
+    static constexpr float kMaxDt = 1.0f;
+    bool gapDetected = dt > kMaxDt;
+    dt = std::min(dt, kMaxDt);
+
     float filteredX = xFilter.filter(rawX, dt);
     float filteredY = yFilter.filter(rawY, dt);
 
@@ -39,11 +45,29 @@ std::vector<NoteEvent> StrumDetector::update(const HandLandmarks& hand,
     inZone = filteredX >= cal.strumZoneLeft && filteredX <= cal.strumZoneRight
           && filteredY >= cal.strumZoneTop && filteredY <= cal.strumZoneBottom;
 
+    if (gapDetected)
+    {
+        prevX = filteredX;
+        prevY = filteredY;
+        prevTimestampMs = timestampMs;
+        return events;
+    }
+
     if (prevTimestampMs > 0 && prevX >= 0.0f && prevY >= 0.0f && inZone)
     {
         float vx = filteredX - prevX;
         float vy = filteredY - prevY;
         float speed = std::sqrt(vx * vx + vy * vy);
+
+        static int strumLogCounter = 0;
+        if (++strumLogCounter % 30 == 0)
+        {
+            std::ostringstream ss;
+            ss << "[Strum] pos=(" << filteredX << "," << filteredY << ")"
+               << " speed=" << speed << " minSpeed=" << cal.minStrumSpeed
+               << " inZone=" << inZone;
+            CrashLogger::instance().logInfo(ss.str());
+        }
 
         if (speed >= cal.minStrumSpeed)
         {
@@ -83,6 +107,16 @@ std::vector<NoteEvent> StrumDetector::update(const HandLandmarks& hand,
                             lastVelocity = velocity;
                             lastDirection = dir;
                             previousFretForString[s] = currentFret;
+
+                            std::ostringstream ss;
+                            ss << "[Strum] STRUM string=" << s
+                               << " midi=" << midiNote
+                               << " fret=" << currentFret
+                               << " vel=" << velocity
+                               << " dir=" << (dir == StrumDirection::Down ? "DN" : "UP")
+                               << " crossY=" << crossY
+                               << " stringY=" << stringY;
+                            CrashLogger::instance().logInfo(ss.str());
                         }
                     }
                 }

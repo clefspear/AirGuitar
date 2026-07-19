@@ -49,11 +49,16 @@ private:
     ChordClassifier chordClassifier;
     PhysicsState currentState;
 
+    int64_t lastHandTimestampMs = 0;
+    static constexpr int64_t kHandLostTimeoutMs = 100;
+    float lastFretWristX = -1.0f;
+
     NoteCallback noteCallback;
 
     std::thread physicsThread;
     std::atomic<bool> running{false};
     std::atomic<bool> shouldStop{false};
+    std::atomic<bool> newFrameAvailable{false};
 };
 
 } // namespace AirGuitar

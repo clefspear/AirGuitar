@@ -57,6 +57,8 @@ TEST_CASE("HandLandmarks valid with 21 landmarks and high confidence",
     HandLandmarks hand;
     hand.landmarks.resize(21);
     hand.palmBox.confidence = 0.9f;
+    hand.palmBox.width = 0.2f;
+    hand.palmBox.height = 0.2f;
     hand.isLeft = true;
     hand.handednessScore = 0.3f;
 
@@ -94,6 +96,8 @@ TEST_CASE("FrameData reports hands correctly", "[LandmarkData]")
     HandLandmarks hand;
     hand.landmarks.resize(21);
     hand.palmBox.confidence = 0.9f;
+    hand.palmBox.width = 0.2f;
+    hand.palmBox.height = 0.2f;
     frame.hands.push_back(hand);
 
     REQUIRE(frame.hasHands());
@@ -214,6 +218,8 @@ TEST_CASE("HandLandmarks with extreme confidence values", "[EdgeCase]")
     REQUIRE_FALSE(hand.valid());
 
     hand.landmarks.resize(21);
+    hand.palmBox.width = 0.2f;
+    hand.palmBox.height = 0.2f;
     REQUIRE(hand.valid());
     REQUIRE(hand.confidence() == Approx(1.5f));
 }
@@ -226,6 +232,8 @@ TEST_CASE("FrameData with multiple hands", "[EdgeCase]")
         HandLandmarks hand;
         hand.landmarks.resize(21);
         hand.palmBox.confidence = 0.5f + static_cast<float>(i) * 0.1f;
+        hand.palmBox.width = 0.2f;
+        hand.palmBox.height = 0.2f;
         frame.hands.push_back(hand);
     }
 
@@ -258,4 +266,40 @@ TEST_CASE("Camera multiple stop safety", "[EdgeCase]")
     cam.stopCapture();
     REQUIRE_FALSE(cam.isCapturing());
     REQUIRE_FALSE(cam.isOpen());
+}
+
+// ── PalmDetector Threshold Tests ───────────────────────────────────────
+
+TEST_CASE("PalmDetector confidence threshold is 0.40",
+          "[PalmDetector][Threshold]")
+{
+    REQUIRE(PalmDetector::kConfidenceThreshold == Approx(0.40f));
+}
+
+TEST_CASE("PalmDetector tracking threshold is lower than main threshold",
+          "[PalmDetector][Threshold]")
+{
+    REQUIRE(PalmDetector::kTrackingConfidenceThreshold
+            < PalmDetector::kConfidenceThreshold);
+    REQUIRE(PalmDetector::kTrackingConfidenceThreshold == Approx(0.30f));
+}
+
+TEST_CASE("HandLandmarks valid() accepts confidence above valid threshold",
+          "[HandLandmarks][Threshold]")
+{
+    HandLandmarks hand;
+    hand.landmarks.resize(21);
+    hand.palmBox.confidence = 0.5f;
+    hand.palmBox.width = 0.2f;
+    hand.palmBox.height = 0.2f;
+    REQUIRE(hand.valid());
+}
+
+TEST_CASE("HandLandmarks valid() rejects confidence below valid threshold",
+          "[HandLandmarks][Threshold]")
+{
+    HandLandmarks hand;
+    hand.landmarks.resize(21);
+    hand.palmBox.confidence = 0.30f;
+    REQUIRE_FALSE(hand.valid());
 }

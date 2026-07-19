@@ -22,7 +22,7 @@ struct CalibrationData
     float extendedThreshold = 0.7f;
     float referenceHandSize = 0.15f;
 
-    bool leftHandFretting = true;
+    bool leftHandFretting = false;
     bool funMode = false;
 
     std::array<int, 6> funModeChords = {55, 60, 62, 52, 57, 52};
@@ -58,7 +58,7 @@ struct CalibrationData
         c.strumZoneBottom = 0.85f;
         c.extendedThreshold = 0.7f;
         c.referenceHandSize = 0.15f;
-        c.leftHandFretting = true;
+        c.leftHandFretting = false;
         c.funMode = false;
         c.minStrumSpeed = 0.005f;
         c.maxStrumSpeed = 0.08f;

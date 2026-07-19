@@ -63,6 +63,7 @@ bool CalibrationManager::load(CalibrationData& cal, const std::string& path)
     if (!file.is_open())
         return false;
 
+    CalibrationData loaded;
     std::string line;
     while (std::getline(file, line))
     {
@@ -73,31 +74,53 @@ bool CalibrationManager::load(CalibrationData& cal, const std::string& path)
         std::string key = line.substr(0, pos);
         std::string value = line.substr(pos + 1);
 
-        if (key == "fretOriginX") cal.fretOriginX = std::stof(value);
-        else if (key == "fretScaleX") cal.fretScaleX = std::stof(value);
-        else if (key == "fret1X") cal.fret1X = std::stof(value);
-        else if (key == "fret12X") cal.fret12X = std::stof(value);
-        else if (key == "stringTopY") cal.stringTopY = std::stof(value);
-        else if (key == "stringBottomY") cal.stringBottomY = std::stof(value);
-        else if (key == "strumZoneLeft") cal.strumZoneLeft = std::stof(value);
-        else if (key == "strumZoneRight") cal.strumZoneRight = std::stof(value);
-        else if (key == "strumZoneTop") cal.strumZoneTop = std::stof(value);
-        else if (key == "strumZoneBottom") cal.strumZoneBottom = std::stof(value);
-        else if (key == "extendedThreshold") cal.extendedThreshold = std::stof(value);
-        else if (key == "referenceHandSize") cal.referenceHandSize = std::stof(value);
-        else if (key == "leftHandFretting") cal.leftHandFretting = (value == "1");
-        else if (key == "funMode") cal.funMode = (value == "1");
-        else if (key == "minStrumSpeed") cal.minStrumSpeed = std::stof(value);
-        else if (key == "maxStrumSpeed") cal.maxStrumSpeed = std::stof(value);
-        else if (key == "strumCooldownMs") cal.strumCooldownMs = std::stoi(value);
+        if (key == "fretOriginX") loaded.fretOriginX = std::stof(value);
+        else if (key == "fretScaleX") loaded.fretScaleX = std::stof(value);
+        else if (key == "fret1X") loaded.fret1X = std::stof(value);
+        else if (key == "fret12X") loaded.fret12X = std::stof(value);
+        else if (key == "stringTopY") loaded.stringTopY = std::stof(value);
+        else if (key == "stringBottomY") loaded.stringBottomY = std::stof(value);
+        else if (key == "strumZoneLeft") loaded.strumZoneLeft = std::stof(value);
+        else if (key == "strumZoneRight") loaded.strumZoneRight = std::stof(value);
+        else if (key == "strumZoneTop") loaded.strumZoneTop = std::stof(value);
+        else if (key == "strumZoneBottom") loaded.strumZoneBottom = std::stof(value);
+        else if (key == "extendedThreshold") loaded.extendedThreshold = std::stof(value);
+        else if (key == "referenceHandSize") loaded.referenceHandSize = std::stof(value);
+        else if (key == "leftHandFretting") loaded.leftHandFretting = (value == "1");
+        else if (key == "funMode") loaded.funMode = (value == "1");
+        else if (key == "minStrumSpeed") loaded.minStrumSpeed = std::stof(value);
+        else if (key == "maxStrumSpeed") loaded.maxStrumSpeed = std::stof(value);
+        else if (key == "strumCooldownMs") loaded.strumCooldownMs = std::stoi(value);
         else if (key.size() > 12 && key.substr(0, 12) == "funModeChord")
         {
             int idx = std::stoi(key.substr(12));
             if (idx >= 0 && idx < 6)
-                cal.funModeChords[idx] = std::stoi(value);
+                loaded.funModeChords[idx] = std::stoi(value);
         }
     }
 
+    bool valid = true;
+    if (loaded.strumZoneLeft >= loaded.strumZoneRight)
+        valid = false;
+    else if (loaded.strumZoneTop >= loaded.strumZoneBottom)
+        valid = false;
+    else if (loaded.strumZoneRight - loaded.strumZoneLeft < 0.05f)
+        valid = false;
+    else if (loaded.strumZoneBottom - loaded.strumZoneTop < 0.05f)
+        valid = false;
+    else if (loaded.stringTopY >= loaded.stringBottomY)
+        valid = false;
+    else if (loaded.stringBottomY - loaded.stringTopY < 0.05f)
+        valid = false;
+    else if (loaded.fret1X < 0.0f || loaded.fret1X > 1.0f)
+        valid = false;
+    else if (loaded.fret12X < 0.0f || loaded.fret12X > 1.0f)
+        valid = false;
+
+    if (!valid)
+        return false;
+
+    cal = loaded;
     return true;
 }
 

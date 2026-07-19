@@ -29,7 +29,22 @@ struct HandLandmarks
     float handednessScore = 0.0f;
     int64_t timestampMs = 0;
 
-    bool valid() const { return landmarks.size() == 21 && palmBox.confidence > 0.5f; }
+    bool valid() const
+    {
+        if (landmarks.size() != 21 || palmBox.confidence < 0.35f)
+            return false;
+
+        if (palmBox.width < 0.01f || palmBox.height < 0.01f)
+            return false;
+
+        for (const auto& lm : landmarks)
+        {
+            if (lm.x < -0.1f || lm.x > 1.1f || lm.y < -0.1f || lm.y > 1.1f)
+                return false;
+        }
+
+        return true;
+    }
     float confidence() const { return palmBox.confidence; }
 };
 

@@ -36,10 +36,11 @@ private:
     {
         None = -1,
         Welcome = 0,
-        Fret1 = 1,
-        Fret12 = 2,
-        StrumZone = 3,
-        Complete = 4
+        Handedness = 1,
+        Fret1 = 2,
+        Fret12 = 3,
+        StrumZone = 4,
+        Complete = 5
     };
 
     Step step = Step::None;
@@ -50,18 +51,30 @@ private:
 
     float fret1X = 0.0f;
     float fret12X = 0.0f;
+    float fretMinY = 1.0f;
+    float fretMaxY = 0.0f;
     float strumLeft = 0.0f;
     float strumRight = 0.0f;
     float strumTop = 0.0f;
     float strumBottom = 0.0f;
 
     int dwellFrames = 0;
+    int graceFrames = 0;
+    int welcomeFrames = 0;
+    bool handednessAutoDetected = false;
     static constexpr int kDwellRequired = 30;
+    static constexpr int kGraceFrames = 5;
+    static constexpr int kWelcomeAutoAdvanceFrames = 60;
+
+    bool fretCaptured = false;
+    bool strumCaptured = false;
 
     CompleteCallback onComplete;
 
     void advanceStep();
     void computeCalibration();
+    const HandLandmarks* findFretHand() const;
+    const HandLandmarks* findStrumHand() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CalibrationWizard)
 };

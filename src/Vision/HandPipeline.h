@@ -51,6 +51,8 @@ public:
 
 private:
     static constexpr int kPalmDetectionInterval = 3;
+    static constexpr int kMaxTrackingFrames = 15;
+    static constexpr float kTrackingBoxExpansion = 0.3f;
 
     std::unique_ptr<PalmDetector> palmDetector;
     std::unique_ptr<HandLandmarker> handLandmarker;
@@ -65,6 +67,7 @@ private:
     std::atomic<bool> initialised{false};
 
     FrameData latestResult;
+    FrameData lastResultWithHands;
 
     int inferenceCount = 0;
     int frameSkipCounter = 0;
@@ -77,11 +80,14 @@ private:
         int64_t timestampMs;
     };
     std::vector<QueuedFrame> frameQueue;
-    std::vector<DetectedPalm> previousPalms;
+    std::vector<DetectedPalm> trackedPalms;
+    int framesSinceLastPalmDetection = 0;
     FrameCallback frameCallback;
 
     void inferenceLoop();
     void processFrame(const cv::Mat& frame, int64_t timestampMs);
+    std::vector<DetectedPalm> expandPalmBox(const DetectedPalm& palm, float expansion);
+    bool updateTrackedPalm(DetectedPalm& palm, const HandLandmarks& hand);
 
     std::string modelsDir;
 };

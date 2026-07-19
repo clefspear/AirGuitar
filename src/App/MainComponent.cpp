@@ -99,6 +99,12 @@ MainComponent::MainComponent()
 
                 camera->startCapture();
                 CrashLogger::instance().logInfo("Hand pipeline started, camera capture running");
+
+                if (!calibrationManager.hasSavedCalibration())
+                {
+                    calWizard->start();
+                    CrashLogger::instance().logInfo("Auto-starting calibration wizard (no saved calibration)");
+                }
             }
             else
             {
@@ -120,11 +126,13 @@ MainComponent::MainComponent()
             case Camera::Error::PermissionDenied:
                 initError = InitError::CameraPermissionDenied;
                 initErrorMessage = "Camera permission denied. Grant access in System Settings > Privacy & Security > Camera.";
+                cameraStartFailed = true;
                 break;
             default:
                 initError = InitError::CameraOpenFailed;
                 initErrorMessage = "Camera failed to open (error " +
                     std::to_string(static_cast<int>(result)) + ")";
+                cameraStartFailed = true;
                 break;
         }
         CrashLogger::instance().logError("Init", initErrorMessage);
@@ -133,7 +141,29 @@ MainComponent::MainComponent()
     if (audioEngine)
     {
         audioEngine->startAudio();
-        CrashLogger::instance().logInfo("Audio engine started");
+        if (audioEngine->isInitialised())
+        {
+            CrashLogger::instance().logInfo("Audio engine started");
+        }
+        else
+        {
+            audioInitError = audioEngine->getStartError();
+            initError = InitError::AudioInitFailed;
+            initErrorMessage = "Audio device failed: " + audioInitError;
+            CrashLogger::instance().logError("Init", initErrorMessage);
+        }
+    }
+
+    {
+        std::ostringstream ss;
+        ss << "Calibration loaded:"
+           << " leftHandFretting=" << calibration.leftHandFretting
+           << " strumZone=[" << calibration.strumZoneLeft << "," << calibration.strumZoneRight << "]"
+           << "x[" << calibration.strumZoneTop << "," << calibration.strumZoneBottom << "]"
+           << " strings=[" << calibration.stringTopY << "," << calibration.stringBottomY << "]"
+           << " fret1X=" << calibration.fret1X
+           << " fret12X=" << calibration.fret12X;
+        CrashLogger::instance().logInfo(ss.str());
     }
 
     startTimerHz(30);
@@ -218,7 +248,7 @@ void MainComponent::paint(juce::Graphics& g)
                 juce::Colour colour = hand.isLeft
                     ? juce::Colours::cyan
                     : juce::Colours::orange;
-                drawLandmarks(g, hand, colour);
+                drawLandmarks(g, hand, colour, lastState);
             }
             drawPose(g, landmarks.pose);
         }
@@ -227,6 +257,8 @@ void MainComponent::paint(juce::Graphics& g)
     if (physicsEngine && cameraReady)
     {
         drawStrumZone(g);
+        drawStrumIndicator(g, lastState);
+        drawFretZone(g, lastState);
         drawNoteDisplay(g, lastState);
         drawChordOverlay(g, lastState);
         drawFunModeIndicator(g);
@@ -254,6 +286,23 @@ void MainComponent::resized()
 void MainComponent::timerCallback()
 {
     ++frameCount;
+
+    if (cameraStartFailed && camera)
+    {
+        cameraRetryCount++;
+        if (cameraRetryCount % 30 == 0)
+        {
+            CrashLogger::instance().logInfo("Retrying camera open...");
+            auto err = camera->reopen();
+            if (err == Camera::Error::None)
+            {
+                cameraReady = true;
+                cameraStartFailed = false;
+                CrashLogger::instance().logInfo("Camera opened on retry");
+            }
+        }
+    }
+
     if (frameCount % 30 == 0)
     {
         if (handPipeline) inferenceFps = handPipeline->getInferenceRate();
@@ -266,7 +315,7 @@ void MainComponent::timerCallback()
     if (lastState.tracking && !lastState.chordName.empty())
         noteOpacity = std::min(1.0f, noteOpacity + 0.08f);
     else
-        noteOpacity = std::max(0.0f, noteOpacity - 0.04f);
+        noteOpacity = std::max(0.0f, noteOpacity - 0.12f);
 
     glowPhase += 0.05f;
     if (glowPhase > 6.28318f)
@@ -433,6 +482,7 @@ void MainComponent::drawErrorOverlay(juce::Graphics& g)
         case InitError::CameraOpenFailed:   title = "Camera Error"; break;
         case InitError::ModelLoadFailed:    title = "Models Not Found"; break;
         case InitError::PipelineInitFailed: title = "Pipeline Init Failed"; break;
+        case InitError::AudioInitFailed:    title = "Audio Device Error"; break;
         default: break;
     }
 
@@ -447,25 +497,92 @@ void MainComponent::drawErrorOverlay(juce::Graphics& g)
     g.setColour(juce::Colours::yellow.withAlpha(0.6f));
     g.drawText("Crash log: " + CrashLogger::instance().getLogPath(),
                textBounds, juce::Justification::centredBottom);
+
+    if (cameraStartFailed)
+    {
+        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        g.setColour(juce::Colours::green.withAlpha(0.8f));
+        g.drawText("Retrying camera in background...",
+                   textBounds, juce::Justification::centredBottom);
+    }
 }
 
 void MainComponent::drawLandmarks(juce::Graphics& g,
                                    const HandLandmarks& hand,
-                                   const juce::Colour& colour)
+                                   const juce::Colour& colour,
+                                   const PhysicsState& state)
 {
     if (hand.landmarks.size() != 21)
         return;
 
     auto bounds = getLocalBounds().toFloat();
 
-    g.setColour(colour);
+    int camW = camera ? camera->getWidth() : Camera::kDefaultWidth;
+    int camH = camera ? camera->getHeight() : Camera::kDefaultHeight;
+    auto scaleX = bounds.getWidth() / static_cast<float>(camW);
+    auto scaleY = bounds.getHeight() / static_cast<float>(camH);
+    auto scale = std::min(scaleX, scaleY);
+    auto w = camW * scale;
+    auto h = camH * scale;
+    auto ox = (bounds.getWidth() - w) / 2.0f;
+    auto oy = (bounds.getHeight() - h) / 2.0f;
+
+    static constexpr int kFingertipIndices[] = {4, 8, 12, 16, 20};
+    static constexpr int kFingerMcpIndices[] = {2, 5, 9, 13, 17};
+    static constexpr float kStringYPositions[6] = {};
 
     for (size_t i = 0; i < hand.landmarks.size(); ++i)
     {
         auto& lm = hand.landmarks[i];
-        auto px = lm.x * bounds.getWidth();
-        auto py = lm.y * bounds.getHeight();
-        g.fillEllipse(px - 3.0f, py - 3.0f, 6.0f, 6.0f);
+        auto px = ox + lm.x * w;
+        auto py = oy + lm.y * h;
+
+        bool isFingertip = false;
+        for (int fi = 0; fi < 5; ++fi)
+        {
+            if (static_cast<int>(i) == kFingertipIndices[fi])
+            {
+                isFingertip = true;
+                break;
+            }
+        }
+
+        if (isFingertip)
+        {
+            bool noteActive = false;
+            float tipY = lm.y;
+            float closestDist = 999.0f;
+            for (int s = 0; s < 6; ++s)
+            {
+                if (state.fretState.activeStrings[s] >= 0)
+                {
+                    float stringY = calibration.stringTopY
+                        + static_cast<float>(s) / 5.0f
+                        * (calibration.stringBottomY - calibration.stringTopY);
+                    float dist = std::abs(tipY - stringY);
+                    if (dist < closestDist)
+                        closestDist = dist;
+                    if (dist < 0.08f)
+                        noteActive = true;
+                }
+            }
+
+            juce::Colour tipColour = noteActive
+                ? juce::Colours::limegreen
+                : juce::Colours::red;
+
+            float glow = noteActive ? (0.7f + 0.3f * std::sin(glowPhase * 2.0f)) : 1.0f;
+            g.setColour(tipColour.withAlpha(glow));
+            g.fillEllipse(px - 9.0f, py - 9.0f, 18.0f, 18.0f);
+
+            g.setColour(juce::Colours::white.withAlpha(0.6f));
+            g.drawEllipse(px - 9.0f, py - 9.0f, 18.0f, 18.0f, 2.0f);
+        }
+        else
+        {
+            g.setColour(colour.withAlpha(0.85f));
+            g.fillEllipse(px - 3.5f, py - 3.5f, 7.0f, 7.0f);
+        }
     }
 
     static const std::vector<std::pair<int, int>> connections = {
@@ -476,12 +593,13 @@ void MainComponent::drawLandmarks(juce::Graphics& g,
         {0, 17}, {17, 18}, {18, 19}, {19, 20}
     };
 
+    g.setColour(colour.withAlpha(0.5f));
     for (auto [a, b] : connections)
     {
         auto& p1 = hand.landmarks[a];
         auto& p2 = hand.landmarks[b];
-        g.drawLine(p1.x * bounds.getWidth(), p1.y * bounds.getHeight(),
-                   p2.x * bounds.getWidth(), p2.y * bounds.getHeight(),
+        g.drawLine(ox + p1.x * w, oy + p1.y * h,
+                   ox + p2.x * w, oy + p2.y * h,
                    2.0f);
     }
 }
@@ -492,6 +610,16 @@ void MainComponent::drawPose(juce::Graphics& g, const PoseLandmarks& pose)
         return;
 
     auto bounds = getLocalBounds().toFloat();
+
+    int camW = camera ? camera->getWidth() : Camera::kDefaultWidth;
+    int camH = camera ? camera->getHeight() : Camera::kDefaultHeight;
+    auto scaleX = bounds.getWidth() / static_cast<float>(camW);
+    auto scaleY = bounds.getHeight() / static_cast<float>(camH);
+    auto scale = std::min(scaleX, scaleY);
+    auto w = camW * scale;
+    auto h = camH * scale;
+    auto ox = (bounds.getWidth() - w) / 2.0f;
+    auto oy = (bounds.getHeight() - h) / 2.0f;
 
     static const std::vector<std::pair<int, int>> connections = {
         {11, 12}, {11, 23}, {12, 24}, {23, 24},
@@ -512,8 +640,8 @@ void MainComponent::drawPose(juce::Graphics& g, const PoseLandmarks& pose)
         if (p1.visibility < 0.5f || p2.visibility < 0.5f)
             continue;
 
-        g.drawLine(p1.x * bounds.getWidth(), p1.y * bounds.getHeight(),
-                   p2.x * bounds.getWidth(), p2.y * bounds.getHeight(),
+        g.drawLine(ox + p1.x * w, oy + p1.y * h,
+                   ox + p2.x * w, oy + p2.y * h,
                    2.0f);
     }
 }
@@ -536,30 +664,153 @@ void MainComponent::drawChordOverlay(juce::Graphics& g, const PhysicsState& stat
                juce::Justification::centred);
 }
 
-void MainComponent::drawStrumZone(juce::Graphics& g)
+juce::Rectangle<float> MainComponent::getCameraArea() const
 {
     auto bounds = getLocalBounds().toFloat();
+    int camW = camera ? camera->getWidth() : Camera::kDefaultWidth;
+    int camH = camera ? camera->getHeight() : Camera::kDefaultHeight;
+    auto scaleX = bounds.getWidth() / static_cast<float>(camW);
+    auto scaleY = bounds.getHeight() / static_cast<float>(camH);
+    auto scale = std::min(scaleX, scaleY);
+    auto w = camW * scale;
+    auto h = camH * scale;
+    auto x = (bounds.getWidth() - w) / 2.0f;
+    auto y = (bounds.getHeight() - h) / 2.0f;
+    return {x, y, w, h};
+}
 
-    float left = bounds.getWidth() * calibration.strumZoneLeft;
-    float right = bounds.getWidth() * calibration.strumZoneRight;
-    float top = bounds.getHeight() * calibration.strumZoneTop;
-    float bottom = bounds.getHeight() * calibration.strumZoneBottom;
+void MainComponent::drawStrumZone(juce::Graphics& g)
+{
+    auto cam = getCameraArea();
 
-    g.setColour(juce::Colours::yellow.withAlpha(0.15f));
+    float left   = cam.getX() + cam.getWidth()  * calibration.strumZoneLeft;
+    float right  = cam.getX() + cam.getWidth()  * calibration.strumZoneRight;
+    float top    = cam.getY() + cam.getHeight() * calibration.strumZoneTop;
+    float bottom = cam.getY() + cam.getHeight() * calibration.strumZoneBottom;
+
+    g.setColour(juce::Colours::yellow.withAlpha(0.25f));
     g.fillRect(left, top, right - left, bottom - top);
 
-    g.setColour(juce::Colours::yellow.withAlpha(0.4f));
-    g.drawRect(left, top, right - left, bottom - top, 1.0f);
+    g.setColour(juce::Colours::yellow.withAlpha(0.7f));
+    g.drawRect(left, top, right - left, bottom - top, 2.0f);
 
-    g.setColour(juce::Colours::yellow.withAlpha(0.3f));
+    g.setColour(juce::Colours::yellow.withAlpha(0.6f));
+    g.setFont(juce::Font(juce::FontOptions(13.0f)));
+
+    for (int i = 0; i < 6; ++i)
+    {
+        float y = top + static_cast<float>(i) / 5.0f * (bottom - top);
+        g.drawLine(left, y, right, y, 1.0f);
+        g.drawText("S" + juce::String(i + 1), right + 5, y - 7, 25, 14,
+                   juce::Justification::left);
+    }
+}
+
+void MainComponent::drawStrumIndicator(juce::Graphics& g, const PhysicsState& state)
+{
+    if (!state.tracking)
+        return;
+
+    auto cam = getCameraArea();
+
+    float left   = cam.getX() + cam.getWidth()  * calibration.strumZoneLeft;
+    float right  = cam.getX() + cam.getWidth()  * calibration.strumZoneRight;
+    float top    = cam.getY() + cam.getHeight() * calibration.strumZoneTop;
+    float bottom = cam.getY() + cam.getHeight() * calibration.strumZoneBottom;
+
+    auto landmarks = handPipeline ? handPipeline->getLatestLandmarks() : FrameData{};
+    for (const auto& hand : landmarks.hands)
+    {
+        if (hand.landmarks.empty())
+            continue;
+
+        float wx = cam.getX() + hand.landmarks[0].x * cam.getWidth();
+        float wy = cam.getY() + hand.landmarks[0].y * cam.getHeight();
+
+        bool inZone = hand.landmarks[0].x >= calibration.strumZoneLeft
+                   && hand.landmarks[0].x <= calibration.strumZoneRight
+                   && hand.landmarks[0].y >= calibration.strumZoneTop
+                   && hand.landmarks[0].y <= calibration.strumZoneBottom;
+
+        if (!inZone)
+            continue;
+
+        juce::Colour dotColour = state.strumming
+            ? juce::Colours::limegreen
+            : juce::Colours::yellow;
+
+        float pulse = 0.7f + 0.3f * std::sin(glowPhase * 3.0f);
+        g.setColour(dotColour.withAlpha(pulse));
+        g.fillEllipse(wx - 8.0f, wy - 8.0f, 16.0f, 16.0f);
+
+        g.setColour(juce::Colours::white.withAlpha(0.8f));
+        g.drawEllipse(wx - 8.0f, wy - 8.0f, 16.0f, 16.0f, 2.0f);
+    }
+
+    if (state.strumming)
+    {
+        float cx = (left + right) / 2.0f;
+        float cy = top - 15.0f;
+        g.setColour(juce::Colours::limegreen.withAlpha(0.8f));
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        juce::String dir = state.strumDirection == StrumDirection::Down ? "DN" : "UP";
+        g.drawText(dir, cx - 10, cy, 20, 12, juce::Justification::centred);
+    }
+}
+
+void MainComponent::drawFretZone(juce::Graphics& g, const PhysicsState& state)
+{
+    auto cam = getCameraArea();
+
+    float left   = cam.getX() + cam.getWidth()  * calibration.fret1X;
+    float right  = cam.getX() + cam.getWidth()  * calibration.fret12X;
+    float top    = cam.getY() + cam.getHeight() * calibration.stringTopY;
+    float bottom = cam.getY() + cam.getHeight() * calibration.stringBottomY;
+
+    g.setColour(juce::Colours::green.withAlpha(0.20f));
+    g.fillRect(left, top, right - left, bottom - top);
+
+    g.setColour(juce::Colours::green.withAlpha(0.6f));
+    g.drawRect(left, top, right - left, bottom - top, 2.0f);
+
+    g.setColour(juce::Colours::green.withAlpha(0.5f));
     g.setFont(juce::Font(juce::FontOptions(12.0f)));
 
     for (int i = 0; i < 6; ++i)
     {
         float y = top + static_cast<float>(i) / 5.0f * (bottom - top);
-        g.drawLine(left, y, right, y, 0.5f);
-        g.drawText("S" + juce::String(i + 1), right + 5, y - 6, 25, 12,
-                   juce::Justification::left);
+        g.drawLine(left, y, right, y, 1.0f);
+        g.drawText("S" + juce::String(i + 1), left - 30, y - 7, 27, 14,
+                   juce::Justification::right);
+    }
+
+    static const int fretMarks[] = {1, 3, 5, 7, 9, 12};
+    static const int numMarks = 6;
+    for (int i = 0; i < numMarks; ++i)
+    {
+        int fretNum = fretMarks[i];
+        float fretX = left + static_cast<float>(fretNum - 1) / 11.0f * (right - left);
+        g.drawLine(fretX, top, fretX, bottom, 1.0f);
+
+        bool isCurrentFret = (state.tracking && state.fretState.fret == fretNum);
+        g.setColour(isCurrentFret
+            ? juce::Colours::limegreen.withAlpha(0.9f)
+            : juce::Colours::green.withAlpha(0.5f));
+        g.drawText(juce::String(fretNum), fretX - 10, top - 16, 20, 14,
+                   juce::Justification::centred);
+    }
+
+    float nutX = left;
+    g.setColour(juce::Colours::white.withAlpha(0.6f));
+    g.drawLine(nutX, top, nutX, bottom, 3.0f);
+
+    if (state.tracking)
+    {
+        g.setColour(juce::Colours::green.withAlpha(0.7f));
+        g.setFont(juce::Font(juce::FontOptions(14.0f)));
+        g.drawText("Fret " + juce::String(state.fretState.fret),
+                   left, bottom + 5, right - left, 18,
+                   juce::Justification::centred);
     }
 }
 
@@ -572,11 +823,11 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
     }
 
     auto pos = event.getPosition().toFloat();
-    auto bounds = getLocalBounds().toFloat();
-    float szLeft = bounds.getWidth() * calibration.strumZoneLeft;
-    float szRight = bounds.getWidth() * calibration.strumZoneRight;
-    float szTop = bounds.getHeight() * calibration.strumZoneTop;
-    float szBottom = bounds.getHeight() * calibration.strumZoneBottom;
+    auto cam = getCameraArea();
+    float szLeft = cam.getX() + cam.getWidth() * calibration.strumZoneLeft;
+    float szRight = cam.getX() + cam.getWidth() * calibration.strumZoneRight;
+    float szTop = cam.getY() + cam.getHeight() * calibration.strumZoneTop;
+    float szBottom = cam.getY() + cam.getHeight() * calibration.strumZoneBottom;
 
     if (pos.x >= szLeft && pos.x <= szRight && pos.y >= szTop && pos.y <= szBottom)
     {
@@ -625,11 +876,11 @@ void MainComponent::mouseUp(const juce::MouseEvent&)
 void MainComponent::mouseMove(const juce::MouseEvent& event)
 {
     auto pos = event.getPosition().toFloat();
-    auto bounds = getLocalBounds().toFloat();
-    float szLeft = bounds.getWidth() * calibration.strumZoneLeft;
-    float szRight = bounds.getWidth() * calibration.strumZoneRight;
-    float szTop = bounds.getHeight() * calibration.strumZoneTop;
-    float szBottom = bounds.getHeight() * calibration.strumZoneBottom;
+    auto cam = getCameraArea();
+    float szLeft = cam.getX() + cam.getWidth() * calibration.strumZoneLeft;
+    float szRight = cam.getX() + cam.getWidth() * calibration.strumZoneRight;
+    float szTop = cam.getY() + cam.getHeight() * calibration.strumZoneTop;
+    float szBottom = cam.getY() + cam.getHeight() * calibration.strumZoneBottom;
 
     bool wasInZone = mouseInStrumZone;
     mouseInStrumZone = (pos.x >= szLeft && pos.x <= szRight
@@ -652,15 +903,24 @@ void MainComponent::drawNoteDisplay(juce::Graphics& g, const PhysicsState& state
         return;
 
     auto bounds = getLocalBounds().toFloat();
+    auto cam = getCameraArea();
     float alpha = noteOpacity * 0.45f;
     float glow = 0.5f + 0.5f * std::sin(glowPhase);
     float glowAlpha = alpha * (0.7f + 0.3f * glow);
 
-    float noteX = bounds.getWidth() * 0.02f;
-    float noteY = bounds.getHeight() * 0.35f;
+    float fretLeft = cam.getX() + cam.getWidth() * calibration.fret1X;
+    float fretRight = cam.getX() + cam.getWidth() * calibration.fret12X;
+    float fretTop = cam.getY() + cam.getHeight() * calibration.stringTopY;
+    float panelW = 140.0f;
+    float panelH = 140.0f;
+    float noteX = (fretLeft + fretRight) / 2.0f - panelW / 2.0f;
+    float noteY = fretTop - panelH - 10.0f;
+
+    noteX = std::max(5.0f, std::min(noteX, bounds.getWidth() - panelW - 5.0f));
+    noteY = std::max(5.0f, noteY);
 
     g.setColour(juce::Colours::cyan.withAlpha(glowAlpha * 0.15f));
-    g.fillRoundedRectangle(noteX - 10, noteY - 15, 160, 180, 10.0f);
+    g.fillRoundedRectangle(noteX, noteY, panelW, panelH, 10.0f);
 
     g.setFont(juce::Font(juce::FontOptions(36.0f, juce::Font::bold)));
     g.setColour(juce::Colours::cyan.withAlpha(glowAlpha));
@@ -703,7 +963,7 @@ void MainComponent::drawNoteDisplay(juce::Graphics& g, const PhysicsState& state
         g.setColour(juce::Colours::yellow.withAlpha(glowAlpha));
         juce::String dir = state.strumDirection == StrumDirection::Down ? "DN" : "UP";
         g.drawText(dir + " " + juce::String(state.strumVelocity, 2),
-                   noteX, noteY + 170, 140, 15,
+                   noteX, noteY + panelH - 18, panelW, 15,
                    juce::Justification::centred);
     }
 }

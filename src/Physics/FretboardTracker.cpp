@@ -139,7 +139,7 @@ bool FretboardTracker::isThumbExtended(const HandLandmarks& hand)
     const auto& indexMcp = hand.landmarks[5];
 
     float spread = distance(thumbTip, indexMcp);
-    return spread > 0.08f;
+    return spread > 0.15f;
 }
 
 int FretboardTracker::mapToNearestString(float y, float topY, float bottomY, int numStrings)

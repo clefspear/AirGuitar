@@ -1,4 +1,6 @@
 #include "AudioEngine.h"
+#include "App/CrashLogger.h"
+#include <sstream>
 
 namespace AirGuitar {
 
@@ -16,12 +18,16 @@ void AudioEngine::startAudio()
 {
     if (audioStarted)
         return;
-    deviceManager.addAudioCallback(this);
+
     auto error = deviceManager.initialiseWithDefaultDevices(0, 2);
     if (error.isNotEmpty())
-        deviceManager.removeAudioCallback(this);
-    else
-        audioStarted = true;
+    {
+        startError = error.toStdString();
+        return;
+    }
+
+    deviceManager.addAudioCallback(this);
+    audioStarted = true;
 }
 
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
@@ -46,8 +52,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     for (int ch = 0; ch < numOutputChannels; ++ch)
         juce::FloatVectorOperations::clear(outputChannelData[ch], numSamples);
 
+    int queueSize = 0;
     {
         std::lock_guard<std::mutex> lock(queueMutex);
+        queueSize = static_cast<int>(eventQueue.size());
         while (!eventQueue.empty())
         {
             auto& evt = eventQueue.front();
@@ -57,6 +65,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
                 stringModel.noteOff(evt.stringIndex);
             eventQueue.pop();
         }
+    }
+
+    static int audioLogCounter = 0;
+    if (++audioLogCounter % 48000 == 0)
+    {
+        std::ostringstream ss;
+        ss << "[Audio] callback prepared=" << prepared
+           << " queue=" << queueSize
+           << " active=" << stringModel.isAnyActive();
+        CrashLogger::instance().logInfo(ss.str());
     }
 
     if (numOutputChannels > 0)
@@ -75,6 +93,13 @@ void AudioEngine::handleNoteEvent(const NoteEvent& evt)
 {
     std::lock_guard<std::mutex> lock(queueMutex);
     eventQueue.push(evt);
+
+    std::ostringstream ss;
+    ss << "[Audio] event=" << (evt.type == NoteEventType::NoteOn ? "ON" : "OFF")
+       << " string=" << evt.stringIndex
+       << " midi=" << evt.midiNote
+       << " vel=" << evt.velocity;
+    CrashLogger::instance().logInfo(ss.str());
 }
 
 void AudioEngine::setMasterVolume(float vol)

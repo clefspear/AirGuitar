@@ -68,3 +68,73 @@ TEST_CASE("CalibrationManager preserves fun mode chords", "[CalibrationManager]"
 
     std::remove(testPath.c_str());
 }
+
+TEST_CASE("CalibrationData default strum zone is on right side for mirrored camera",
+          "[CalibrationData][Mirrored]")
+{
+    CalibrationData cal = CalibrationData::defaultConfig();
+
+    REQUIRE(cal.strumZoneLeft > 0.5f);
+    REQUIRE(cal.strumZoneRight > cal.strumZoneLeft);
+    REQUIRE(cal.strumZoneRight <= 1.0f);
+    REQUIRE(cal.strumZoneTop < cal.strumZoneBottom);
+}
+
+TEST_CASE("CalibrationData default fret geometry is on left side",
+          "[CalibrationData]")
+{
+    CalibrationData cal = CalibrationData::defaultConfig();
+
+    REQUIRE(cal.fretOriginX < 0.5f);
+    REQUIRE(cal.fret1X < cal.fret12X);
+    REQUIRE(cal.fretScaleX > 0.0f);
+}
+
+TEST_CASE("CalibrationData midiNoteForString returns valid MIDI notes",
+          "[CalibrationData]")
+{
+    CalibrationData cal = CalibrationData::defaultConfig();
+
+    for (int s = 0; s < 6; ++s)
+    {
+        int openNote = cal.midiNoteForString(s, 0);
+        REQUIRE(openNote > 0);
+        REQUIRE(openNote < 128);
+
+        int fretted = cal.midiNoteForString(s, 5);
+        REQUIRE(fretted == openNote + 5);
+    }
+}
+
+TEST_CASE("CalibrationData midiNoteForString rejects invalid string index",
+          "[CalibrationData][EdgeCase]")
+{
+    CalibrationData cal = CalibrationData::defaultConfig();
+
+    REQUIRE(cal.midiNoteForString(-1, 0) == -1);
+    REQUIRE(cal.midiNoteForString(6, 0) == -1);
+}
+
+TEST_CASE("CalibrationData open strings span correct range",
+          "[CalibrationData]")
+{
+    CalibrationData cal = CalibrationData::defaultConfig();
+
+    REQUIRE(cal.openStringNotes[0] == 40);
+    REQUIRE(cal.openStringNotes[5] == 64);
+
+    for (int i = 0; i < 5; ++i)
+        REQUIRE(cal.openStringNotes[i] < cal.openStringNotes[i + 1]);
+}
+
+TEST_CASE("CalibrationData default strum speed thresholds are reasonable",
+          "[CalibrationData]")
+{
+    CalibrationData cal = CalibrationData::defaultConfig();
+
+    REQUIRE(cal.minStrumSpeed > 0.0f);
+    REQUIRE(cal.minStrumSpeed < cal.maxStrumSpeed);
+    REQUIRE(cal.maxStrumSpeed < 1.0f);
+    REQUIRE(cal.strumCooldownMs > 0);
+    REQUIRE(cal.strumCooldownMs < 500);
+}

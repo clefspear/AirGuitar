@@ -1,6 +1,9 @@
 #include "PhysicsEngine.h"
+#include "App/CrashLogger.h"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <sstream>
 
 namespace AirGuitar {
 
@@ -36,6 +39,7 @@ void PhysicsEngine::pushFrame(const FrameData& frame)
 {
     std::lock_guard<std::mutex> lock(frameMutex);
     latestFrame = frame;
+    newFrameAvailable.store(true, std::memory_order_release);
 }
 
 void PhysicsEngine::setCalibration(const CalibrationData& cal)
@@ -63,13 +67,16 @@ void PhysicsEngine::physicsLoop()
     {
         auto start = std::chrono::steady_clock::now();
 
-        FrameData frame;
+        if (newFrameAvailable.load(std::memory_order_acquire))
         {
-            std::lock_guard<std::mutex> lock(frameMutex);
-            frame = latestFrame;
+            FrameData frame;
+            {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                frame = latestFrame;
+            }
+            newFrameAvailable.store(false, std::memory_order_release);
+            processFrame(frame);
         }
-
-        processFrame(frame);
 
         auto elapsed = std::chrono::steady_clock::now() - start;
         auto remaining = tickInterval - elapsed;
@@ -89,51 +96,111 @@ void PhysicsEngine::processFrame(const FrameData& frame)
         cal = calibration;
     }
 
+    static int logCounter = 0;
+    bool shouldLog = (++logCounter % 60 == 1);
+
+    if (shouldLog)
+    {
+        std::ostringstream ss;
+        ss << "[Physics] hands=" << frame.hands.size()
+           << " ts=" << frame.timestampMs;
+        for (size_t i = 0; i < frame.hands.size(); ++i)
+        {
+            auto& h = frame.hands[i];
+            ss << " hand" << i << "=" << (h.isLeft ? "L" : "R")
+               << " x=" << (h.landmarks.empty() ? 0.0f : h.landmarks[0].x)
+               << " y=" << (h.landmarks.empty() ? 0.0f : h.landmarks[0].y)
+               << " conf=" << h.confidence();
+        }
+        CrashLogger::instance().logInfo(ss.str());
+    }
+
     if (!frame.hasHands())
     {
-        newState.tracking = false;
+        bool handRecentlyLost = (lastHandTimestampMs > 0
+            && frame.timestampMs - lastHandTimestampMs < kHandLostTimeoutMs);
 
-        std::vector<NoteEvent> offEvents;
+        if (!handRecentlyLost)
         {
-            std::lock_guard<std::mutex> lock(stateMutex);
-            auto calCopy = calibration;
-            for (int s = 0; s < 6; ++s)
+            newState.tracking = false;
+
+            std::vector<NoteEvent> offEvents;
             {
-                int fret = currentState.fretState.activeStrings[s];
-                if (fret >= 0)
+                std::lock_guard<std::mutex> lock(stateMutex);
+                auto calCopy = calibration;
+                for (int s = 0; s < 6; ++s)
                 {
-                    NoteEvent noteOff;
-                    noteOff.type = NoteEventType::NoteOff;
-                    noteOff.midiNote = calCopy.midiNoteForString(s, fret);
-                    noteOff.stringIndex = s;
-                    noteOff.fret = fret;
-                    noteOff.velocity = 0.0f;
-                    noteOff.timestampMs = frame.timestampMs;
-                    offEvents.push_back(noteOff);
+                    int fret = currentState.fretState.activeStrings[s];
+                    if (fret >= 0)
+                    {
+                        NoteEvent noteOff;
+                        noteOff.type = NoteEventType::NoteOff;
+                        noteOff.midiNote = calCopy.midiNoteForString(s, fret);
+                        noteOff.stringIndex = s;
+                        noteOff.fret = fret;
+                        noteOff.velocity = 0.0f;
+                        noteOff.timestampMs = frame.timestampMs;
+                        offEvents.push_back(noteOff);
+                    }
                 }
             }
+
+            for (auto& evt : offEvents)
+            {
+                if (noteCallback)
+                    noteCallback(evt);
+            }
+
+            strumDetector.reset();
         }
 
-        for (auto& evt : offEvents)
-        {
-            if (noteCallback)
-                noteCallback(evt);
-        }
-
-        strumDetector.reset();
         std::lock_guard<std::mutex> lock(stateMutex);
+        newState.chordName = "";
+        if (handRecentlyLost)
+        {
+            newState.tracking = currentState.tracking;
+            newState.fretState = currentState.fretState;
+        }
         currentState = newState;
         return;
     }
 
     newState.tracking = true;
+    lastHandTimestampMs = frame.timestampMs;
 
     auto assignment = assignHands(frame);
 
+    if (shouldLog)
+    {
+        std::ostringstream as;
+        as << "[Physics] assign fret=" << (assignment.fretHand ? "yes" : "no")
+           << " strum=" << (assignment.strumHand ? "yes" : "no");
+        CrashLogger::instance().logInfo(as.str());
+    }
+
     if (assignment.fretHand)
     {
-        fretboard.update(*assignment.fretHand, cal);
-        newState.fretState = fretboard.getState();
+        float wristX = assignment.fretHand->landmarks.empty()
+            ? 0.5f : assignment.fretHand->landmarks[0].x;
+
+        bool continuityOk = (lastFretWristX < 0.0f)
+            || std::abs(wristX - lastFretWristX) < 0.3f;
+
+        if (continuityOk)
+        {
+            fretboard.update(*assignment.fretHand, cal);
+            newState.fretState = fretboard.getState();
+            lastFretWristX = wristX;
+        }
+        else if (currentState.tracking)
+        {
+            newState.fretState = currentState.fretState;
+        }
+    }
+    else if (currentState.tracking)
+    {
+        newState.fretState = currentState.fretState;
+        lastFretWristX = -1.0f;
     }
 
     if (assignment.strumHand)
@@ -153,6 +220,15 @@ void PhysicsEngine::processFrame(const FrameData& frame)
 
             if (noteCallback)
                 noteCallback(evt);
+
+            std::ostringstream ss;
+            ss << "[Physics] NoteEvent type=" << (evt.type == NoteEventType::NoteOn ? "ON" : "OFF")
+               << " string=" << evt.stringIndex
+               << " midi=" << evt.midiNote
+               << " fret=" << evt.fret
+               << " vel=" << evt.velocity
+               << " dir=" << (evt.direction == StrumDirection::Down ? "DN" : "UP");
+            CrashLogger::instance().logInfo(ss.str());
         }
     }
 
@@ -169,33 +245,60 @@ HandAssignment PhysicsEngine::assignHands(const FrameData& frame)
 {
     HandAssignment assignment;
 
+    CalibrationData cal;
+    {
+        std::lock_guard<std::mutex> lock(stateMutex);
+        cal = calibration;
+    }
+
+    auto isInStrumZone = [&](const HandLandmarks& hand) -> bool {
+        if (hand.landmarks.empty()) return false;
+        float wristX = hand.landmarks[0].x;
+        float wristY = hand.landmarks[0].y;
+        return wristX >= cal.strumZoneLeft && wristX <= cal.strumZoneRight
+            && wristY >= cal.strumZoneTop && wristY <= cal.strumZoneBottom;
+    };
+
+    auto isOnFretSide = [&](const HandLandmarks& hand) -> bool {
+        if (hand.landmarks.empty()) return false;
+        return hand.landmarks[0].x < cal.strumZoneLeft;
+    };
+
     if (frame.hands.size() == 1)
     {
         auto& hand = frame.hands[0];
-        if (calibration.leftHandFretting)
+        if (hand.valid() && hand.landmarks.size() >= 21)
         {
-            if (hand.isLeft)
-                assignment.fretHand = &hand;
-            else
+            if (isInStrumZone(hand))
                 assignment.strumHand = &hand;
-        }
-        else
-        {
-            if (hand.isLeft)
-                assignment.strumHand = &hand;
-            else
+            else if (isOnFretSide(hand))
                 assignment.fretHand = &hand;
         }
     }
     else if (frame.hands.size() >= 2)
     {
+        const HandLandmarks* bestFret = nullptr;
+        const HandLandmarks* bestStrum = nullptr;
+
         for (auto& hand : frame.hands)
         {
-            if (hand.isLeft == calibration.leftHandFretting)
-                assignment.fretHand = &hand;
-            else
-                assignment.strumHand = &hand;
+            if (!hand.valid() || hand.landmarks.size() < 21)
+                continue;
+
+            if (isOnFretSide(hand))
+            {
+                if (!bestFret || hand.confidence() > bestFret->confidence())
+                    bestFret = &hand;
+            }
+            else if (isInStrumZone(hand))
+            {
+                if (!bestStrum || hand.confidence() > bestStrum->confidence())
+                    bestStrum = &hand;
+            }
         }
+
+        assignment.fretHand = bestFret;
+        assignment.strumHand = bestStrum;
     }
 
     return assignment;

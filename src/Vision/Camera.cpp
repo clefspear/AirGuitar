@@ -16,6 +16,7 @@ Camera::Error Camera::open(int deviceId, int w, int h, int fps)
     width = w;
     height = h;
     targetFps = fps;
+    lastDeviceId = deviceId;
 
     capture.open(deviceId);
     if (!capture.isOpened())
@@ -42,6 +43,13 @@ void Camera::close()
 {
     if (capture.isOpened())
         capture.release();
+}
+
+Camera::Error Camera::reopen()
+{
+    stopCapture();
+    close();
+    return open(lastDeviceId, width, height, targetFps);
 }
 
 bool Camera::isOpen() const

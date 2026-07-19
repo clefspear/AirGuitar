@@ -41,7 +41,7 @@ void StringModel::noteOff(int stringIndex)
     if (stringIndex < 0 || stringIndex >= 6)
         return;
 
-    strings[stringIndex].setDecay(0.98f);
+    strings[stringIndex].setDecay(0.995f);
 }
 
 float StringModel::mix()
@@ -57,7 +57,7 @@ float StringModel::mix()
         }
     }
     output = body.process(output);
-    return output * masterVolume / 6.0f;
+    return output * masterVolume / 3.0f;
 }
 
 void StringModel::setMasterVolume(float vol)
